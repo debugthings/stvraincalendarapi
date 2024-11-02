@@ -11,7 +11,16 @@ var host = new HostBuilder()
     .ConfigureFunctionsWebApplication()
     .ConfigureServices(services =>
     {
-        services.AddHttpClient<ConvertToICS>(configureHttpClient =>
+        services.AddApplicationInsightsTelemetryWorkerService();
+        services.ConfigureFunctionsApplicationInsights();
+        services.AddControllers(controllers =>  
+        {
+            controllers.OutputFormatters.Add(new ICSTextOutputFormatter());
+        });
+
+        services.AddHttpLogging(o => { });
+
+        var httpBuilder = services.AddHttpClient("LINQ", configureHttpClient =>
         {
             string apiEndpoint = Helpers.GetEnvironmentVariable<string>("APIEndpoint") ?? "https://api.linqconnect.com";
             configureHttpClient.BaseAddress = new Uri(apiEndpoint);
@@ -19,16 +28,7 @@ var host = new HostBuilder()
             configureHttpClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("text/plain"));
             configureHttpClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("*/*"));
         })
-        .AddExtendedHttpClientLogging()
         .AddStandardResilienceHandler();
-
-        services.AddApplicationInsightsTelemetryWorkerService();
-        services.ConfigureFunctionsApplicationInsights();
-        services.AddControllers(controllers =>  
-        {
-            controllers.OutputFormatters.Add(new ICSTextOutputFormatter());
-        });
     })
     .Build();
-
 host.Run();

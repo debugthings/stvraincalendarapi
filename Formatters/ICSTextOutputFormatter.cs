@@ -1,6 +1,7 @@
 ﻿using Ical.Net.CalendarComponents;
 using Ical.Net.DataTypes;
 using Ical.Net.Serialization;
+using Microsoft.ApplicationInsights;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Formatters;
 using Microsoft.Extensions.DependencyInjection;
@@ -24,6 +25,7 @@ namespace StVrainToICSFunctionApp.Formatters
             SupportedEncodings.Add(Encoding.UTF8);
             SupportedEncodings.Add(Encoding.ASCII);
             SupportedEncodings.Add(Encoding.Unicode);
+            
         }
 
         public override bool CanWriteResult(OutputFormatterCanWriteContext context)
@@ -37,32 +39,30 @@ namespace StVrainToICSFunctionApp.Formatters
             string outPut = string.Empty;
             if (context.HttpContext.Items[inputSessionContext] is Session inputSession)
             {
-
-                var serviceProvider = httpContext.RequestServices;
-
-                var logger = serviceProvider.GetRequiredService<ILogger<ICSTextOutputFormatter>>();
-
                 if (context.Object is Menu menu)
                 {
-                    outPut = FormatMenuToICS(menu, inputSession, logger);
+                    ILogger<TelemetryClient> _logger = httpContext.RequestServices.GetService<ILogger<TelemetryClient>>();
+                    outPut = FormatMenuToICS(menu, inputSession, _logger);
                 }
             }
 
             await httpContext.Response.WriteAsync(outPut, selectedEncoding);
         }
 
-        private string FormatMenuToICS(Menu menu, Session inputSession, ILogger<ICSTextOutputFormatter> logger)
+        private string FormatMenuToICS(Menu menu, Session inputSession, ILogger _logger)
         {
             var sb = new StringBuilder();
             // The calendar wants a timezone.
             var calendar = new Ical.Net.Calendar();
             calendar.AddTimeZone(new VTimeZone(defaultTimeZone)); // TZ should be added
 
+            _logger?.LogInformation($"Using {defaultTimeZone} for the time zone.");
             try
             {
                 if (inputSession == Session.Academic)
                 {
-
+                    _logger?.LogInformation($"Starting the creation of the {inputSession} calendar events.");
+                    _logger?.LogInformation($"Using {defaultTimeZone} for the time zone.");
                     foreach (var academiccalendar in menu?.AcademicCalendars ?? [])
                     {
                         foreach (var academicDay in academiccalendar?.Days ?? [])
@@ -115,6 +115,8 @@ namespace StVrainToICSFunctionApp.Formatters
 
                                 if (isWhatWeWant)
                                 {
+                                    _logger?.LogInformation($"Starting the creation of the {inputSession} calendar events.");
+                                    _logger?.LogInformation($"Using {defaultTimeZone} for the time zone.");
                                     foreach (var day in menuplan?.Days ?? [])
                                     {
                                         if (!string.IsNullOrEmpty(day.Date))
@@ -157,6 +159,7 @@ namespace StVrainToICSFunctionApp.Formatters
                                                         };
                                                         sb.Clear();
                                                         calendar.Events.Add(calendarEvent);
+                                                        _logger?.LogInformation($"Added {calendarEvent.Summary} on {calendarEvent.Start} to the {inputSession} calendar.");
                                                     }
                                                 }
                                             }
@@ -171,10 +174,10 @@ namespace StVrainToICSFunctionApp.Formatters
             }
             catch (Exception ex)
             {
-                logger.LogError(ex, $"Exception while creating the {inputSession} calendar.");
+                _logger?.LogError(ex, $"Exception while creating the {inputSession} calendar.");
             }
 
-            logger.LogInformation($"Successfully created the {inputSession} calendar");
+            _logger?.LogInformation($"Successfully created the {inputSession} calendar");
             var serializer = new CalendarSerializer();
             var whatToSend = serializer.SerializeToString(calendar);
             return whatToSend;

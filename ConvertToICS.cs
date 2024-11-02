@@ -6,6 +6,8 @@ using Microsoft.AspNetCore.Http;
 using StVrainToICSFunctionApp.Models;
 using static StVrainToICSFunctionApp.Helpers.Helpers;
 using StVrainToICSFunctionApp.Formatters;
+using Microsoft.ApplicationInsights;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace StVrainToICSFunctionApp
 {
@@ -16,13 +18,13 @@ namespace StVrainToICSFunctionApp
         private const string buildingId = "67673211-c4be-ed11-82b1-880d996bcdd8";
         private const string districtId = "55485575-09b2-ed11-8e69-f29174b2df22";
 
-        private readonly ILogger _logger;
-        private readonly HttpClient _httpClient;
+        private readonly ILogger<TelemetryClient> _logger;
+        private readonly IHttpClientFactory _clientFactory;
 
-        public ConvertToICS(ILoggerFactory loggerFactory, HttpClient httpClient)
+        public ConvertToICS(ILogger<TelemetryClient> logger, IHttpClientFactory clientFactory)
         {
-            _logger = loggerFactory.CreateLogger<ConvertToICS>();
-            _httpClient = httpClient;
+            _logger = logger;
+            this._clientFactory = clientFactory;
         }
 
         /// <summary>
@@ -67,13 +69,14 @@ namespace StVrainToICSFunctionApp
             Menu menu;
             try
             {
+                var client = this._clientFactory.CreateClient("LINQ");
                 defaultStart = defaultStart == 0.0 ? -7.0 : defaultStart;
                 defaultEnd = defaultEnd == 0.0 ? 30.0 : defaultEnd;
 
                 startDate ??= DateTime.Now.AddDays(defaultStart);
                 endDate ??= DateTime.Now.AddDays(defaultEnd);
 
-                menu = await _httpClient.GetFromJsonAsync<Menu>($"/api/FamilyMenu?buildingId={buildingId}&districtId={districtId}&startDate={startDate:M-dd-yyyy}&endDate={endDate:M-dd-yyyy}");
+                menu = await client.GetFromJsonAsync<Menu>($"/api/FamilyMenu?buildingId={buildingId}&districtId={districtId}&startDate={startDate:M-dd-yyyy}&endDate={endDate:M-dd-yyyy}");
 
                 if (menu == null)
                 {
