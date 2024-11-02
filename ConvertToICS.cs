@@ -18,10 +18,10 @@ namespace StVrainToICSFunctionApp
         private const string buildingId = "67673211-c4be-ed11-82b1-880d996bcdd8";
         private const string districtId = "55485575-09b2-ed11-8e69-f29174b2df22";
 
-        private readonly ILogger<TelemetryClient> _logger;
+        private readonly ILogger<ConvertToICS> _logger;
         private readonly IHttpClientFactory _clientFactory;
 
-        public ConvertToICS(ILogger<TelemetryClient> logger, IHttpClientFactory clientFactory)
+        public ConvertToICS(ILogger<ConvertToICS> logger, IHttpClientFactory clientFactory)
         {
             _logger = logger;
             this._clientFactory = clientFactory;

@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using StVrainToICSFunctionApp;
 using StVrainToICSFunctionApp.Formatters;
 using StVrainToICSFunctionApp.Helpers;
@@ -13,7 +14,7 @@ var host = new HostBuilder()
     {
         services.AddApplicationInsightsTelemetryWorkerService();
         services.ConfigureFunctionsApplicationInsights();
-        services.AddControllers(controllers =>  
+        services.AddControllers(controllers =>
         {
             controllers.OutputFormatters.Add(new ICSTextOutputFormatter());
         });
@@ -30,5 +31,19 @@ var host = new HostBuilder()
         })
         .AddStandardResilienceHandler();
     })
+    .ConfigureLogging(logging =>
+         {
+             logging.Services.Configure<LoggerFilterOptions>(options =>
+             {
+                 LoggerFilterRule defaultRule = options.Rules.FirstOrDefault(rule => rule.ProviderName
+                     == "Microsoft.Extensions.Logging.ApplicationInsights.ApplicationInsightsLoggerProvider");
+                 if (defaultRule is not null)
+                 {
+                     options.Rules.Remove(defaultRule);
+                 }
+             });
+         })
     .Build();
+
+
 host.Run();

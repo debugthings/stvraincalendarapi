@@ -41,7 +41,7 @@ namespace StVrainToICSFunctionApp.Formatters
             {
                 if (context.Object is Menu menu)
                 {
-                    ILogger<TelemetryClient> _logger = httpContext.RequestServices.GetService<ILogger<TelemetryClient>>();
+                    ILogger _logger = httpContext.RequestServices.GetService<ILogger<ConvertToICS>>();
                     outPut = FormatMenuToICS(menu, inputSession, _logger);
                 }
             }
@@ -85,7 +85,6 @@ namespace StVrainToICSFunctionApp.Formatters
                 }
                 else
                 {
-
                     foreach (var familymenusession in menu?.FamilyMenuSessions ?? [])
                     {
                         // This is Breakfast, Lunch, Snacks
@@ -98,7 +97,6 @@ namespace StVrainToICSFunctionApp.Formatters
                                 // This will either be Breakfast {yyyy} or Elementary & PK Lunch {yyyy}
                                 // Unknown what this will look like in 2026 but can assume it will be the same.
                                 var menuPlan = menuplan.MenuPlanName ?? string.Empty;
-                                Console.WriteLine($"  Menu Plan: {menuPlan}");
                                 bool isWhatWeWant = false;
 
                                 switch (session)
