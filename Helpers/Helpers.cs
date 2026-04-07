@@ -1,24 +1,24 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 
-namespace StVrainToICSFunctionApp.Helpers
+namespace StVrainToICSFunctionApp.Helpers;
+
+public static class Helpers
 {
-    public static class Helpers
+    [return: MaybeNull]
+    public static T GetEnvironmentVariable<T>(string name)
     {
-        public static T GetEnvironmentVariable<T>(string name)
+        if (string.IsNullOrEmpty(name))
         {
-            if (!string.IsNullOrEmpty(name))
-            {
-                string valueToConvert = Environment.GetEnvironmentVariable(name, EnvironmentVariableTarget.Process) ?? string.Empty;
-                if (!string.IsNullOrEmpty(valueToConvert))
-                {
-                    return (T)Convert.ChangeType(valueToConvert, typeof(T)) ?? default(T);
-                }
-            }
             return default;
         }
+
+        string valueToConvert = Environment.GetEnvironmentVariable(name, EnvironmentVariableTarget.Process) ?? string.Empty;
+        if (string.IsNullOrEmpty(valueToConvert))
+        {
+            return default;
+        }
+
+        return (T)Convert.ChangeType(valueToConvert, typeof(T), CultureInfo.InvariantCulture);
     }
 }

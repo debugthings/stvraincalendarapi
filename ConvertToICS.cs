@@ -6,7 +6,6 @@ using Microsoft.AspNetCore.Http;
 using StVrainToICSFunctionApp.Models;
 using static StVrainToICSFunctionApp.Helpers.Helpers;
 using StVrainToICSFunctionApp.Formatters;
-using Microsoft.ApplicationInsights;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace StVrainToICSFunctionApp
@@ -76,21 +75,24 @@ namespace StVrainToICSFunctionApp
                 startDate ??= DateTime.Now.AddDays(defaultStart);
                 endDate ??= DateTime.Now.AddDays(defaultEnd);
 
-                menu = await client.GetFromJsonAsync<Menu>($"/api/FamilyMenu?buildingId={buildingId}&districtId={districtId}&startDate={startDate:M-dd-yyyy}&endDate={endDate:M-dd-yyyy}");
+                Menu? fetched = await client.GetFromJsonAsync<Menu>(
+                    $"/api/FamilyMenu?buildingId={buildingId}&districtId={districtId}&startDate={startDate:M-dd-yyyy}&endDate={endDate:M-dd-yyyy}").ConfigureAwait(false);
 
-                if (menu == null)
+                if (fetched is null)
                 {
-                    throw new NullReferenceException($"The menu api for district {districtId}, building {buildingId}, for the time range {startDate:M-dd-yyyy} to {endDate:M-dd-yyyy} was null. Check the parameters and try again.");
+                    throw new InvalidOperationException(
+                        $"The menu api for district {districtId}, building {buildingId}, for the time range {startDate:M-dd-yyyy} to {endDate:M-dd-yyyy} returned no content. Check the parameters and try again.");
                 }
+
+                menu = fetched;
             }
-            catch (NullReferenceException nre)
+            catch (InvalidOperationException)
             {
-                this._logger.LogError(nre, $"Exception while geting the calendar from the api endpoint.");
                 throw;
             }
             catch (Exception ex)
             {
-                this._logger.LogError(ex, $"Exception while geting the calendar from the api endpoint.");
+                this._logger.LogError(ex, "Exception while getting the calendar from the api endpoint.");
                 throw;
             }
 

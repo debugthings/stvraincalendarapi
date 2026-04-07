@@ -1,7 +1,7 @@
-﻿using Ical.Net.CalendarComponents;
+using System.Globalization;
+using Ical.Net.CalendarComponents;
 using Ical.Net.DataTypes;
 using Ical.Net.Serialization;
-using Microsoft.ApplicationInsights;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Formatters;
 using Microsoft.Extensions.DependencyInjection;
@@ -41,42 +41,47 @@ namespace StVrainToICSFunctionApp.Formatters
             {
                 if (context.Object is Menu menu)
                 {
-                    ILogger _logger = httpContext.RequestServices.GetService<ILogger<ConvertToICS>>();
-                    outPut = FormatMenuToICS(menu, inputSession, _logger);
+                    ILogger<ConvertToICS> logger = httpContext.RequestServices.GetRequiredService<ILogger<ConvertToICS>>();
+                    outPut = FormatMenuToICS(menu, inputSession, logger);
                 }
             }
 
             await httpContext.Response.WriteAsync(outPut, selectedEncoding);
         }
 
-        private string FormatMenuToICS(Menu menu, Session inputSession, ILogger _logger)
+        private string FormatMenuToICS(Menu menu, Session inputSession, ILogger<ConvertToICS> logger)
         {
             var sb = new StringBuilder();
             // The calendar wants a timezone.
             var calendar = new Ical.Net.Calendar();
             calendar.AddTimeZone(new VTimeZone(defaultTimeZone)); // TZ should be added
 
-            _logger?.LogInformation($"Using {defaultTimeZone} for the time zone.");
+            logger.LogInformation("Using {TimeZone} for the time zone.", defaultTimeZone);
             try
             {
                 if (inputSession == Session.Academic)
                 {
-                    _logger?.LogInformation($"Starting the creation of the {inputSession} calendar events.");
-                    _logger?.LogInformation($"Using {defaultTimeZone} for the time zone.");
+                    logger.LogInformation("Starting the creation of the {Session} calendar events.", inputSession);
+                    logger.LogInformation("Using {TimeZone} for the time zone.", defaultTimeZone);
                     foreach (var academiccalendar in menu?.AcademicCalendars ?? [])
                     {
                         foreach (var academicDay in academiccalendar?.Days ?? [])
                         {
-                            DateTime dateTimeOffset = DateTime.Parse(academicDay?.Date ?? DateTime.Now.ToString());
+                            DateTime dateTimeOffset = DateTime.Parse(
+                                academicDay?.Date ?? DateTime.Now.ToString(CultureInfo.InvariantCulture),
+                                CultureInfo.InvariantCulture);
                             string note = academicDay?.Note ?? string.Empty;
+                            // Ical.Net 5+: all-day events use DATE-only CalDateTime; IsAllDay is derived.
+                            var dayStart = new CalDateTime(dateTimeOffset.Year, dateTimeOffset.Month, dateTimeOffset.Day);
+                            var next = dateTimeOffset.AddDays(1);
+                            var dayEnd = new CalDateTime(next.Year, next.Month, next.Day);
                             var calendarEvent = new CalendarEvent
                             {
                                 // If Name property is used, it MUST be RFC 5545 compliant
                                 Summary = academicDay?.Note ?? "Meal Name Empty", // Should always be present
                                 Description = sb.ToString(), // optional
-                                IsAllDay = true,
-                                Start = new CalDateTime(dateTimeOffset),
-
+                                Start = dayStart,
+                                End = dayEnd,
                             };
                             sb.Clear();
                             calendar.Events.Add(calendarEvent);
@@ -113,14 +118,14 @@ namespace StVrainToICSFunctionApp.Formatters
 
                                 if (isWhatWeWant)
                                 {
-                                    _logger?.LogInformation($"Starting the creation of the {inputSession} calendar events.");
-                                    _logger?.LogInformation($"Using {defaultTimeZone} for the time zone.");
+                                    logger.LogInformation("Starting the creation of the {Session} calendar events.", inputSession);
+                                    logger.LogInformation("Using {TimeZone} for the time zone.", defaultTimeZone);
                                     foreach (var day in menuplan?.Days ?? [])
                                     {
                                         if (!string.IsNullOrEmpty(day.Date))
                                         {
                                             // The day of the week for the meal.
-                                            DateTime dateTimeOffset = DateTime.Parse(day.Date);
+                                            DateTime dateTimeOffset = DateTime.Parse(day.Date, CultureInfo.InvariantCulture);
                                             // The session enum has the lunch hour set as the value so we don't have to do any switching
                                             var date = dateTimeOffset.AddHours((int)session).AddMinutes(30);
 
@@ -157,7 +162,11 @@ namespace StVrainToICSFunctionApp.Formatters
                                                         };
                                                         sb.Clear();
                                                         calendar.Events.Add(calendarEvent);
-                                                        _logger?.LogInformation($"Added {calendarEvent.Summary} on {calendarEvent.Start} to the {inputSession} calendar.");
+                                                        logger.LogInformation(
+                                                            "Added {Summary} on {Start} to the {Session} calendar.",
+                                                            calendarEvent.Summary,
+                                                            calendarEvent.Start,
+                                                            inputSession);
                                                     }
                                                 }
                                             }
@@ -172,13 +181,12 @@ namespace StVrainToICSFunctionApp.Formatters
             }
             catch (Exception ex)
             {
-                _logger?.LogError(ex, $"Exception while creating the {inputSession} calendar.");
+                logger.LogError(ex, "Exception while creating the {Session} calendar.", inputSession);
             }
 
-            _logger?.LogInformation($"Successfully created the {inputSession} calendar");
+            logger.LogInformation("Successfully created the {Session} calendar", inputSession);
             var serializer = new CalendarSerializer();
-            var whatToSend = serializer.SerializeToString(calendar);
-            return whatToSend;
+            return serializer.SerializeToString(calendar) ?? string.Empty;
         }
     }
 }

@@ -1,0 +1,6 @@
+<Project>
+  <PropertyGroup>
+    <!-- Executable / JSON DTO style: avoid hundreds of CA1515/CA1819 on models; DI false positives; perf logging rules not worth source generators here. -->
+    <NoWarn>$(NoWarn);CA1515;CA1819;CA1724;CA1848;CA1873;CA2254;CA1812;CA1822;CA1031;CA1508</NoWarn>
+  </PropertyGroup>
+</Project>
