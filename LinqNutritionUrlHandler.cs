@@ -1,10 +1,11 @@
+using System.Net;
 using System.Net.Http;
 using System.Text;
 using Microsoft.Extensions.Logging;
 
 namespace StVrainToICSFunctionApp;
 
-// Per request: uuid v4 as linq-nutrition-url, single raw User-Agent (see SendAsync), then log outbound headers.
+// Per request: uuid v4 as linq-nutrition-url, single User-Agent string, then log outbound headers.
 internal sealed class LinqNutritionUrlHandler : DelegatingHandler
 {
     private const string DefaultBrowserUserAgent =
@@ -19,7 +20,9 @@ internal sealed class LinqNutritionUrlHandler : DelegatingHandler
 
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
-        // Clear typed + string-based UA; set one string (runtime may split into product tokens — that still serializes as a single User-Agent header line).
+        request.Version = HttpVersion.Version11;
+        request.VersionPolicy = HttpVersionPolicy.RequestVersionOrLower;
+
         request.Headers.Remove("User-Agent");
         request.Headers.UserAgent.Clear();
         string? uaOverride = Environment.GetEnvironmentVariable("LinqUserAgent", EnvironmentVariableTarget.Process);
@@ -35,7 +38,6 @@ internal sealed class LinqNutritionUrlHandler : DelegatingHandler
 
         if (_logger.IsEnabled(LogLevel.Information))
         {
-            // Property name avoids generic "Headers" (some pipelines treat it as sensitive); full text also appears on message when OTel IncludeFormattedMessage is true.
             _logger.LogInformation(
                 "LINQ HTTP {Method} {RequestUri} outbound headers: {LinqOutboundHeaders}",
                 request.Method,
@@ -47,11 +49,15 @@ internal sealed class LinqNutritionUrlHandler : DelegatingHandler
 
         if (!response.IsSuccessStatusCode && _logger.IsEnabled(LogLevel.Warning))
         {
+            await response.Content.LoadIntoBufferAsync(cancellationToken).ConfigureAwait(false);
+            string body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            string preview = body.Length <= 1200 ? body : string.Concat(body.AsSpan(0, 1200), "…");
             _logger.LogWarning(
-                "LINQ HTTP response {StatusCode} {ReasonPhrase} for {RequestUri}",
+                "LINQ API returned {StatusCode} {ReasonPhrase} for {RequestUri}. Body preview: {BodyPreview}",
                 (int)response.StatusCode,
                 response.ReasonPhrase,
-                request.RequestUri);
+                request.RequestUri,
+                preview);
         }
 
         return response;
@@ -62,7 +68,6 @@ internal sealed class LinqNutritionUrlHandler : DelegatingHandler
         var sb = new StringBuilder(512);
         foreach (var pair in request.Headers)
         {
-            // User-Agent is stored as multiple product-token strings; on the wire it is still one header line (space-separated). Logging each token looked like duplicate User-Agent headers.
             if (pair.Key.Equals("User-Agent", StringComparison.OrdinalIgnoreCase))
             {
                 sb.Append("User-Agent: ").Append(string.Join(" ", pair.Value)).Append("; ");
