@@ -4,6 +4,7 @@ using Microsoft.Azure.Functions.Worker.Builder;
 using StVrainToICSFunctionApp;
 using StVrainToICSFunctionApp.Middleware;
 using StVrainToICSFunctionApp.Options;
+using StVrainToICSFunctionApp.Services;
 
 bool functionsHost = IsAzureFunctionsHost();
 var appInsightsConnectionString = Environment.GetEnvironmentVariable("APPLICATIONINSIGHTS_CONNECTION_STRING");
@@ -70,7 +71,8 @@ else
         GET /Lunchmenu.ics
         GET /Breakfastmenu.ics
         GET /Academicmenu.ics
-        GET /{districtId}/{buildingId}/lunchmenu.ics
+        GET /rhe/lunchmenu
+        GET /ems/lunchmenu
         GET /healthz
         """,
         "text/plain"));
@@ -81,6 +83,7 @@ static void ConfigureShared(IServiceCollection services, IConfiguration configur
 {
     services.Configure<CacheOptions>(configuration.GetSection(CacheOptions.SectionName));
     services.Configure<ProxyOptions>(configuration.GetSection(ProxyOptions.SectionName));
+    services.AddSingleton<SchoolShortcutCatalog>();
 }
 
 static void RegisterMode(IServiceCollection services, IConfiguration configuration, string contentRootPath, bool functionsHost)

@@ -22,7 +22,17 @@ public sealed class CalendarProxyMiddleware
         await proxy.ProxyMenuRequestAsync(context).ConfigureAwait(false);
     }
 
-    internal static bool IsMenuIcsPath(PathString path) =>
-        path.HasValue
-        && path.Value!.EndsWith("menu.ics", StringComparison.OrdinalIgnoreCase);
+    internal static bool IsMenuIcsPath(PathString path)
+    {
+        if (!path.HasValue)
+        {
+            return false;
+        }
+
+        string value = path.Value!;
+        return value.EndsWith("menu.ics", StringComparison.OrdinalIgnoreCase)
+            || value.EndsWith("/lunchmenu", StringComparison.OrdinalIgnoreCase)
+            || value.EndsWith("/breakfastmenu", StringComparison.OrdinalIgnoreCase)
+            || value.EndsWith("/academicmenu", StringComparison.OrdinalIgnoreCase);
+    }
 }

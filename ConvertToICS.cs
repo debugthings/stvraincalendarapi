@@ -1,7 +1,9 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Azure.Functions.Worker;
+using StVrainToICSFunctionApp.Formatters;
 using StVrainToICSFunctionApp.Models;
+using StVrainToICSFunctionApp.Options;
 using StVrainToICSFunctionApp.Services;
 
 namespace StVrainToICSFunctionApp
@@ -14,11 +16,13 @@ namespace StVrainToICSFunctionApp
 
         private readonly ILogger<ConvertToICS> _logger;
         private readonly IMenuCalendarService _calendar;
+        private readonly SchoolShortcutCatalog _schools;
 
-        public ConvertToICS(ILogger<ConvertToICS> logger, IMenuCalendarService calendar)
+        public ConvertToICS(ILogger<ConvertToICS> logger, IMenuCalendarService calendar, SchoolShortcutCatalog schools)
         {
             _logger = logger;
             _calendar = calendar;
+            _schools = schools;
         }
 
         /// <summary>
@@ -50,6 +54,21 @@ namespace StVrainToICSFunctionApp
             CreateMenuCoreAsync(request.HttpContext, inputSession, buildingId, districtId, startDate, endDate);
 
         /// <summary>
+        /// Path-based calendar URL with an absolute display time as HHmm (1100, 1130, 1200).
+        /// </summary>
+        [Function("createmenuByLocationTime")]
+        [NonAction]
+        public Task<IActionResult> CreateMenuByLocationTimeFunction(
+            [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "{districtId}/{buildingId}/{displayTime}/{inputSession}menu.ics")] HttpRequest request,
+            [FromRoute] string districtId,
+            [FromRoute] string buildingId,
+            [FromRoute] int displayTime,
+            [FromRoute] Session inputSession = Session.None,
+            [FromQuery] DateTime? startDate = null,
+            [FromQuery] DateTime? endDate = null) =>
+            CreateMenuCoreAsync(request.HttpContext, inputSession, buildingId, districtId, startDate, endDate, displayTime);
+
+        /// <summary>
         /// Kestrel / LXC routes (Functions host uses <see cref="CreateMenuFunction"/>).
         /// </summary>
         [HttpGet("/{inputSession}menu.ics")]
@@ -75,14 +94,94 @@ namespace StVrainToICSFunctionApp
             [FromQuery] DateTime? endDate = null) =>
             CreateMenuCoreAsync(HttpContext, inputSession, buildingId, districtId, startDate, endDate);
 
+        /// <summary>
+        /// Absolute display time as HHmm. Example: /{districtId}/{buildingId}/1200/lunchmenu.ics → 12:00.
+        /// </summary>
+        [HttpGet("/{districtId}/{buildingId}/{displayTime:int}/{inputSession}menu.ics")]
+        [HttpGet("/api/{districtId}/{buildingId}/{displayTime:int}/{inputSession}menu.ics")]
+        public Task<IActionResult> CreateMenuByLocationTime(
+            [FromRoute] string districtId,
+            [FromRoute] string buildingId,
+            [FromRoute] int displayTime,
+            [FromRoute] Session inputSession = Session.None,
+            [FromQuery] DateTime? startDate = null,
+            [FromQuery] DateTime? endDate = null) =>
+            CreateMenuCoreAsync(HttpContext, inputSession, buildingId, districtId, startDate, endDate, displayTime);
+
+        /// <summary>
+        /// Short school codes for Google Calendar (no GUIDs): /rhe/lunchmenu, /ems/lunchmenu.
+        /// </summary>
+        [Function("createmenuBySchool")]
+        [NonAction]
+        public Task<IActionResult> CreateMenuBySchoolFunction(
+            [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "{school}/lunchmenu.ics")] HttpRequest request,
+            [FromRoute] string school,
+            [FromQuery] DateTime? startDate = null,
+            [FromQuery] DateTime? endDate = null) =>
+            CreateMenuBySchoolAsync(request.HttpContext, school, startDate, endDate);
+
+        [Function("createmenuBySchoolBare")]
+        [NonAction]
+        public Task<IActionResult> CreateMenuBySchoolBareFunction(
+            [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "{school}/lunchmenu")] HttpRequest request,
+            [FromRoute] string school,
+            [FromQuery] DateTime? startDate = null,
+            [FromQuery] DateTime? endDate = null) =>
+            CreateMenuBySchoolAsync(request.HttpContext, school, startDate, endDate);
+
+        [HttpGet("/{school:regex(^[[a-zA-Z]]{{2,8}}$)}/lunchmenu")]
+        [HttpGet("/{school:regex(^[[a-zA-Z]]{{2,8}}$)}/lunchmenu.ics")]
+        [HttpGet("/api/{school:regex(^[[a-zA-Z]]{{2,8}}$)}/lunchmenu")]
+        [HttpGet("/api/{school:regex(^[[a-zA-Z]]{{2,8}}$)}/lunchmenu.ics")]
+        public Task<IActionResult> CreateMenuBySchool(
+            [FromRoute] string school,
+            [FromQuery] DateTime? startDate = null,
+            [FromQuery] DateTime? endDate = null) =>
+            CreateMenuBySchoolAsync(HttpContext, school, startDate, endDate);
+
+        private Task<IActionResult> CreateMenuBySchoolAsync(
+            HttpContext httpContext,
+            string school,
+            DateTime? startDate,
+            DateTime? endDate)
+        {
+            if (!_schools.TryGet(school, out SchoolShortcut shortcut)
+                || string.IsNullOrWhiteSpace(shortcut.BuildingId)
+                || string.IsNullOrWhiteSpace(shortcut.DistrictId))
+            {
+                return Task.FromResult<IActionResult>(new NotFoundResult());
+            }
+
+            int? displayTime = shortcut.DefaultDisplayTime == 0 ? null : shortcut.DefaultDisplayTime;
+            return CreateMenuCoreAsync(
+                httpContext,
+                Session.Lunch,
+                shortcut.BuildingId,
+                shortcut.DistrictId,
+                startDate,
+                endDate,
+                displayTime);
+        }
+
         private async Task<IActionResult> CreateMenuCoreAsync(
             HttpContext httpContext,
             Session inputSession,
             string buildingId,
             string districtId,
             DateTime? startDate,
-            DateTime? endDate)
+            DateTime? endDate,
+            int? displayTimeHhmm = null)
         {
+            if (displayTimeHhmm is int hhmm)
+            {
+                if (!ICSTextOutputFormatter.TryGetClockTime(hhmm, out _, out _))
+                {
+                    return new NotFoundResult();
+                }
+
+                httpContext.Items[ICSTextOutputFormatter.displayTimeHhmmContext] = hhmm;
+            }
+
             try
             {
                 return await _calendar.CreateMenuAsync(httpContext, inputSession, buildingId, districtId, startDate, endDate)

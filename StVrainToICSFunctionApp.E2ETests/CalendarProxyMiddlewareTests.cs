@@ -73,6 +73,64 @@ public sealed class CalendarProxyMiddlewareTests
     }
 
     [Fact]
+    public async Task Forwards_display_time_path_to_upstream()
+    {
+        RecordingHandler handler = new();
+        CalendarProxyMiddleware middleware = new(_ => Task.CompletedTask);
+        CalendarProxyService proxy = new(
+            new StubHttpClientFactory(handler),
+            Microsoft.Extensions.Options.Options.Create(new ProxyOptions
+            {
+                Enabled = true,
+                UpstreamBaseUrl = "https://lunchmenu.debugthings.com",
+            }),
+            NullLogger<CalendarProxyService>.Instance);
+        DefaultHttpContext context = new();
+        context.Request.Method = HttpMethods.Get;
+        context.Request.Path = "/55485575-09b2-ed11-8e69-f29174b2df22/3805e0fd-bdbe-ed11-82b1-880d996bcdd8/1200/lunchmenu.ics";
+        context.Response.Body = new MemoryStream();
+
+        await middleware.InvokeAsync(context, proxy);
+
+        Assert.Equal(200, context.Response.StatusCode);
+        Assert.NotNull(handler.LastRequestUri);
+        Assert.Equal(
+            "https://lunchmenu.debugthings.com/55485575-09b2-ed11-8e69-f29174b2df22/3805e0fd-bdbe-ed11-82b1-880d996bcdd8/1200/lunchmenu.ics",
+            handler.LastRequestUri!.AbsoluteUri);
+        context.Response.Body.Position = 0;
+        string displayBody = new StreamReader(context.Response.Body).ReadToEnd();
+        Assert.Equal("BEGIN:VCALENDAR", displayBody);
+    }
+
+    [Fact]
+    public async Task Forwards_school_shortcut_path_to_upstream()
+    {
+        RecordingHandler handler = new();
+        CalendarProxyMiddleware middleware = new(_ => Task.CompletedTask);
+        CalendarProxyService proxy = new(
+            new StubHttpClientFactory(handler),
+            Microsoft.Extensions.Options.Options.Create(new ProxyOptions
+            {
+                Enabled = true,
+                UpstreamBaseUrl = "https://lunchmenu.debugthings.com",
+            }),
+            NullLogger<CalendarProxyService>.Instance);
+        DefaultHttpContext context = new();
+        context.Request.Method = HttpMethods.Get;
+        context.Request.Path = "/rhe/lunchmenu";
+        context.Response.Body = new MemoryStream();
+
+        await middleware.InvokeAsync(context, proxy);
+
+        Assert.Equal(200, context.Response.StatusCode);
+        Assert.NotNull(handler.LastRequestUri);
+        Assert.Equal("https://lunchmenu.debugthings.com/rhe/lunchmenu", handler.LastRequestUri!.AbsoluteUri);
+        context.Response.Body.Position = 0;
+        string body = new StreamReader(context.Response.Body).ReadToEnd();
+        Assert.Equal("BEGIN:VCALENDAR", body);
+    }
+
+    [Fact]
     public async Task Non_ics_paths_are_passed_through()
     {
         bool nextCalled = false;
