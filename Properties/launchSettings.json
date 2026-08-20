@@ -2,7 +2,11 @@
   "profiles": {
     "StVrainToICSFunctionApp": {
       "commandName": "Project",
-      "launchBrowser": false
+      "launchBrowser": false,
+      "applicationUrl": "http://localhost:7163",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      }
     }
   }
 }

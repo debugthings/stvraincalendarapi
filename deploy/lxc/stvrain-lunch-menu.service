@@ -1,0 +1,28 @@
+[Unit]
+Description=St. Vrain lunch menu calendar
+Documentation=file:///opt/stvrain-lunch-menu
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=stvrain
+Group=stvrain
+WorkingDirectory=/opt/stvrain-lunch-menu
+ExecStart=/opt/stvrain-lunch-menu/StVrainToICSFunctionApp
+EnvironmentFile=-/etc/stvrain-lunch-menu.env
+Environment=ASPNETCORE_ENVIRONMENT=Production
+Environment=DOTNET_EnableDiagnostics=0
+Restart=on-failure
+RestartSec=5
+KillSignal=SIGINT
+TimeoutStopSec=30
+SyslogIdentifier=stvrain-lunch-menu
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/opt/stvrain-lunch-menu /opt/stvrain-lunch-menu/data /opt/stvrain-lunch-menu/data
+
+[Install]
+WantedBy=multi-user.target

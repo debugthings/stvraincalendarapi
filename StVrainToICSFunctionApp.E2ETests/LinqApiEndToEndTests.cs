@@ -60,9 +60,9 @@ public sealed class LinqApiEndToEndTests
     }
 
     /// <summary>
-    /// Optional: run <c>func start</c> (or your local host), then:
+    /// Optional: run the web app, then:
     /// <c>FUNCTIONS_E2E_BASE_URL=http://localhost:7163 dotnet test --filter Function_Lunch_menu_ics_returns_calendar</c>
-    /// Port must match <c>Host.LocalHttpPort</c> in local.settings.json.
+    /// Port must match <c>applicationUrl</c> in Properties/launchSettings.json.
     /// </summary>
     [SkippableFact]
     [Trait("Category", "Integration")]

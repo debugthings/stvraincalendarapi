@@ -1,39 +1,101 @@
 using Azure.Monitor.OpenTelemetry.Exporter;
-using Microsoft.AspNetCore.Builder;
-using Microsoft.Azure.Functions.Worker;
-using Microsoft.Azure.Functions.Worker.Builder;
-using Microsoft.Azure.Functions.Worker.OpenTelemetry;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
+using Microsoft.AspNetCore.HttpLogging;
+using Microsoft.EntityFrameworkCore;
 using StVrainToICSFunctionApp;
+using StVrainToICSFunctionApp.Data;
 using StVrainToICSFunctionApp.Formatters;
+using StVrainToICSFunctionApp.Middleware;
+using StVrainToICSFunctionApp.Options;
+using StVrainToICSFunctionApp.Services;
 
-var builder = FunctionsApplication.CreateBuilder(args);
+var builder = WebApplication.CreateBuilder(args);
 
-builder.ConfigureFunctionsWebApplication();
-
-// OpenTelemetry sends logs to Azure Monitor; the portal "Log stream" follows stdout — add Console so ILogger lines appear there too.
 builder.Logging.AddConsole();
 
-// UseAzureMonitorExporter requires APPLICATIONINSIGHTS_CONNECTION_STRING (set in local.settings.json / Azure). Without it, startup throws — unlike the legacy AI SDK.
-var appInsightsConnectionString = Environment.GetEnvironmentVariable("APPLICATIONINSIGHTS_CONNECTION_STRING");
-var openTelemetryBuilder = builder.Services.AddOpenTelemetry()
-    .WithLogging(_ => { }, static o => o.IncludeFormattedMessage = true)
-    .UseFunctionsWorkerDefaults();
+builder.Services.Configure<CacheOptions>(builder.Configuration.GetSection(CacheOptions.SectionName));
+builder.Services.Configure<ProxyOptions>(builder.Configuration.GetSection(ProxyOptions.SectionName));
 
+var appInsightsConnectionString = Environment.GetEnvironmentVariable("APPLICATIONINSIGHTS_CONNECTION_STRING");
 if (!string.IsNullOrWhiteSpace(appInsightsConnectionString))
 {
-    openTelemetryBuilder.UseAzureMonitorExporter();
+    builder.Services.AddOpenTelemetry()
+        .WithLogging(_ => { }, static o => o.IncludeFormattedMessage = true)
+        .UseAzureMonitorExporter();
 }
 
-builder.Services.AddControllers(controllers =>
+bool proxyEnabled = builder.Configuration.GetValue<bool>("Proxy:Enabled");
+
+if (proxyEnabled)
 {
-    controllers.OutputFormatters.Add(new ICSTextOutputFormatter());
-});
+    builder.Services.AddHttpClient("Proxy", client =>
+    {
+        client.Timeout = TimeSpan.FromSeconds(60);
+    });
+}
+else
+{
+    builder.Services.AddControllers(controllers =>
+    {
+        controllers.OutputFormatters.Add(new ICSTextOutputFormatter());
+    });
 
-builder.Services.AddHttpLogging(o => { });
+    builder.Services.AddHttpLogging(o =>
+    {
+        o.LoggingFields = HttpLoggingFields.RequestPropertiesAndHeaders | HttpLoggingFields.ResponseStatusCode;
+    });
 
-builder.Services.AddLinqConnectHttpClient();
+    builder.Services.AddLinqConnectHttpClient();
+    builder.Services.AddSingleton<ILinqMenuClient, LinqMenuClient>();
 
-builder.Build().Run();
+    string dbPath = builder.Configuration.GetValue<string>("Cache:DatabasePath") ?? "data/menu-cache.db";
+    if (!Path.IsPathRooted(dbPath))
+    {
+        dbPath = Path.Combine(builder.Environment.ContentRootPath, dbPath);
+    }
+
+    string? dbDir = Path.GetDirectoryName(dbPath);
+    if (!string.IsNullOrEmpty(dbDir))
+    {
+        Directory.CreateDirectory(dbDir);
+    }
+
+    builder.Services.AddDbContext<MenuCacheDbContext>(options => options.UseSqlite($"Data Source={dbPath}"));
+    builder.Services.AddScoped<IMenuCacheService, MenuCacheService>();
+}
+
+var app = builder.Build();
+
+if (proxyEnabled)
+{
+    app.UseMiddleware<CalendarProxyMiddleware>();
+}
+else
+{
+    using (IServiceScope scope = app.Services.CreateScope())
+    {
+        MenuCacheDbContext db = scope.ServiceProvider.GetRequiredService<MenuCacheDbContext>();
+        db.Database.EnsureCreated();
+    }
+
+    if (app.Environment.IsDevelopment())
+    {
+        app.UseHttpLogging();
+    }
+
+    app.MapControllers();
+}
+
+app.MapGet("/healthz", () => Results.Text(proxyEnabled ? "Proxy" : "Healthy", "text/plain"));
+app.MapGet("/", () => Results.Text(
+    """
+    St. Vrain lunch menu calendar
+    GET /Lunchmenu.ics
+    GET /Breakfastmenu.ics
+    GET /Academicmenu.ics
+    GET /healthz
+    """,
+    "text/plain"));
+
+app.Run();
+
+public partial class Program;

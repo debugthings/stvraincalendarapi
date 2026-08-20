@@ -6,7 +6,7 @@ using AppHelpers = StVrainToICSFunctionApp.Helpers.Helpers;
 namespace StVrainToICSFunctionApp;
 
 /// <summary>
-/// Registers the LINQ API <see cref="HttpClient"/> (same pipeline as the function app). Used by <see cref="Program"/> and E2E tests.
+/// Registers the LINQ API <see cref="HttpClient"/> (same pipeline as the web app). Used by <see cref="Program"/> and E2E tests.
 /// </summary>
 /// <remarks>
 /// Many edge WAFs block requests when HTTP headers mimic a browser but the TLS fingerprint is still .NET (not Chrome).

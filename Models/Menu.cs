@@ -1,9 +1,5 @@
-﻿using Microsoft.Azure.Functions.Worker.Converters;
-using StVrainToICSFunctionApp.Formatters;
-
-namespace StVrainToICSFunctionApp.Models
+﻿namespace StVrainToICSFunctionApp.Models
 {
-    [InputConverter(typeof(SessionInputConverter))]
     public enum Session
     {
         None = 0,

@@ -1,90 +1,69 @@
-using System.Net.Http.Json;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Azure.Functions.Worker;
-using Microsoft.Extensions.Logging;
-using Microsoft.AspNetCore.Http;
-using StVrainToICSFunctionApp.Models;
-using static StVrainToICSFunctionApp.Helpers.Helpers;
 using StVrainToICSFunctionApp.Formatters;
-using Microsoft.Extensions.DependencyInjection;
+using StVrainToICSFunctionApp.Models;
+using StVrainToICSFunctionApp.Services;
 
 namespace StVrainToICSFunctionApp
 {
-    public class ConvertToICS
+    [ApiController]
+    public class ConvertToICS : ControllerBase
     {
-        private double defaultStart = GetEnvironmentVariable<double>("DefaultStartOffset");
-        private double defaultEnd = GetEnvironmentVariable<double>("DefaultEndOffset");        
+        private readonly double defaultStart;
+        private readonly double defaultEnd;
         private const string buildingId = "67673211-c4be-ed11-82b1-880d996bcdd8";
         private const string districtId = "55485575-09b2-ed11-8e69-f29174b2df22";
 
         private readonly ILogger<ConvertToICS> _logger;
-        private readonly IHttpClientFactory _clientFactory;
+        private readonly IMenuCacheService _menuCache;
 
-        public ConvertToICS(ILogger<ConvertToICS> logger, IHttpClientFactory clientFactory)
+        public ConvertToICS(ILogger<ConvertToICS> logger, IMenuCacheService menuCache, IConfiguration configuration)
         {
             _logger = logger;
-            this._clientFactory = clientFactory;
+            _menuCache = menuCache;
+            defaultStart = configuration.GetValue<double?>("DefaultStartOffset") ?? -7.0;
+            defaultEnd = configuration.GetValue<double?>("DefaultEndOffset") ?? 30.0;
         }
 
         /// <summary>
-        /// Gets the menu from the supplied parameters.
+        /// Gets the menu from the supplied parameters and returns it as iCalendar.
         /// </summary>
-        /// <param name="req">The http request sent in from Azure Functions.</param>
-        /// <param name="inputSession">The type of menu we're after.</param>
-        /// <param name="buildingId">The guid of the building id.</param>
-        /// <param name="districtId">The guid of the district id.</param>
-        /// <param name="startDate">The start date of the menu to fetch.</param>
-        /// <param name="endDate">The end date of the menu to fetch.</param>
-        /// <returns>A formatted iCal version of the menu.</returns>
         /// <remarks>
-        /// This function reads the LINQ menu JSON file and returns the iCal formattd version of it. To get the GUIDS needed you will need to go to the LINQ website to find them. https://linqconnect.com/public/menu/DCN3CB?buildingId=67673211-c4be-ed11-82b1-880d996bcdd8 
+        /// To get the GUIDs needed, open the LINQ website, e.g.
+        /// https://linqconnect.com/public/menu/DCN3CB?buildingId=67673211-c4be-ed11-82b1-880d996bcdd8
         /// </remarks>
-        [Function("createmenu")]
-        public async Task<IActionResult> CreateMenu([HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "{inputSession}menu.ics")] HttpRequest req,
+        [HttpGet("/{inputSession}menu.ics")]
+        [HttpGet("/api/{inputSession}menu.ics")]
+        public async Task<IActionResult> CreateMenu(
             [FromRoute] Session inputSession = Session.None,
-            string buildingId = buildingId,
-            string districtId = districtId,
-            DateTime? startDate = null,
-            DateTime? endDate = null)
+            [FromQuery] string buildingId = buildingId,
+            [FromQuery] string districtId = districtId,
+            [FromQuery] DateTime? startDate = null,
+            [FromQuery] DateTime? endDate = null)
         {
             if (inputSession == Session.None)
             {
-                return new NotFoundResult();
+                return NotFound();
             }
-            req.HttpContext.Items[ICSTextOutputFormatter.inputSessionContext] = inputSession;
-            return await GenerateICalResponse(req, buildingId, districtId, startDate, endDate);
+
+            HttpContext.Items[ICSTextOutputFormatter.inputSessionContext] = inputSession;
+            return await GenerateICalResponse(buildingId, districtId, startDate, endDate);
         }
 
-        private async Task<IActionResult> GenerateICalResponse(HttpRequest req, string buildingId, string districtId, DateTime? startDate, DateTime? endDate)
+        private async Task<IActionResult> GenerateICalResponse(string buildingId, string districtId, DateTime? startDate, DateTime? endDate)
         {
-            req.HttpContext.Response.ContentType = "text/calendar";
-
-            var formattedMenu = new OkObjectResult(await GetTheCalendar(buildingId, districtId, startDate, endDate));
-            return formattedMenu;
+            Response.ContentType = "text/calendar";
+            return new OkObjectResult(await GetTheCalendar(buildingId, districtId, startDate, endDate));
         }
 
         private async Task<Menu> GetTheCalendar(string buildingId = buildingId, string districtId = districtId, DateTime? startDate = null, DateTime? endDate = null)
         {
-            Menu menu;
+            startDate ??= DateTime.Now.AddDays(defaultStart);
+            endDate ??= DateTime.Now.AddDays(defaultEnd);
+
             try
             {
-                var client = this._clientFactory.CreateClient("LINQ");
-                defaultStart = defaultStart == 0.0 ? -7.0 : defaultStart;
-                defaultEnd = defaultEnd == 0.0 ? 30.0 : defaultEnd;
-
-                startDate ??= DateTime.Now.AddDays(defaultStart);
-                endDate ??= DateTime.Now.AddDays(defaultEnd);
-
-                Menu? fetched = await client.GetFromJsonAsync<Menu>(
-                    $"/api/FamilyMenu?buildingId={buildingId}&districtId={districtId}&startDate={startDate:M-dd-yyyy}&endDate={endDate:M-dd-yyyy}").ConfigureAwait(false);
-
-                if (fetched is null)
-                {
-                    throw new InvalidOperationException(
-                        $"The menu api for district {districtId}, building {buildingId}, for the time range {startDate:M-dd-yyyy} to {endDate:M-dd-yyyy} returned no content. Check the parameters and try again.");
-                }
-
-                menu = fetched;
+                return await _menuCache.GetMenuAsync(buildingId, districtId, startDate.Value, endDate.Value)
+                    .ConfigureAwait(false);
             }
             catch (InvalidOperationException)
             {
@@ -92,11 +71,9 @@ namespace StVrainToICSFunctionApp
             }
             catch (Exception ex)
             {
-                this._logger.LogError(ex, "Exception while getting the calendar from the api endpoint.");
+                _logger.LogError(ex, "Exception while getting the calendar from the api endpoint.");
                 throw;
             }
-
-            return menu;
         }
     }
 }
