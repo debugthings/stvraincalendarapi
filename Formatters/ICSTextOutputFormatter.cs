@@ -99,8 +99,8 @@ namespace StVrainToICSFunctionApp.Formatters
                         {
                             foreach (var menuplan in familymenusession?.MenuPlans ?? [])
                             {
-                                // This will either be Breakfast {yyyy} or Elementary & PK Lunch {yyyy}
-                                // Unknown what this will look like in 2026 but can assume it will be the same.
+                                // Breakfast: "Breakfast {yyyy}" or "Breakfast in Cafe".
+                                // Lunch: "Elementary & PK Lunch {yyyy}" (older) or "Elementary Lunch 26/27".
                                 var menuPlan = menuplan.MenuPlanName ?? string.Empty;
                                 bool isWhatWeWant = false;
 
@@ -110,7 +110,9 @@ namespace StVrainToICSFunctionApp.Formatters
                                         isWhatWeWant = menuPlan.StartsWith("Breakfast", StringComparison.OrdinalIgnoreCase);
                                         break;
                                     case Session.Lunch:
-                                        isWhatWeWant = menuPlan.StartsWith("Elementary & PK Lunch", StringComparison.OrdinalIgnoreCase);
+                                        isWhatWeWant =
+                                            menuPlan.StartsWith("Elementary Lunch", StringComparison.OrdinalIgnoreCase)
+                                            || menuPlan.StartsWith("Elementary & PK Lunch", StringComparison.OrdinalIgnoreCase);
                                         break;
                                     default:
                                         break;

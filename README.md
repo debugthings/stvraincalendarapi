@@ -2,12 +2,29 @@
 
 HTTP service that turns [LINQ Connect](https://linqconnect.com) family menus into iCalendar feeds (`Lunchmenu.ics`, `Breakfastmenu.ics`, `Academicmenu.ics`).
 
-It runs in two modes:
+## Quick start
 
-| Mode | Where | Behavior |
+| Goal | Command |
+| --- | --- |
+| Run locally | `dotnet run --project StVrainToICSFunctionApp.csproj` |
+| Deploy Azure (origin) | `./deploy-azure.sh` |
+| Deploy Azure (proxy → LXC) | `DEPLOY_MODE=proxy ./deploy-azure.sh` |
+| Build LXC tarball | `./deploy/publish.sh` |
+| Install on existing CT | `pct push … && pct exec … bash /tmp/install.sh …` |
+| Run tests | `dotnet test --filter "Category!=Integration"` |
+
+**Subscribe URL (unchanged):** `https://stvrainlunchmenucalendar.azurewebsites.net/api/Lunchmenu.ics`
+
+One codebase, two hosts, switchable by config:
+
+| Host | Default mode | Config |
 | --- | --- | --- |
-| **Origin** (default) | Proxmox LXC at `https://lunchmenu.debugthings.com` | Fetches LINQ, caches menu JSON in SQLite, generates `.ics` |
-| **Proxy** | Azure App Service `stvrainlunchmenucalendar.azurewebsites.net` | Forwards `*menu.ics` to the origin. No SQLite, no LINQ |
+| **Azure Function App** | Origin (LINQ + SQLite) | `Proxy__Enabled=false` |
+| **Proxmox LXC** | Origin | `Proxy__Enabled=false` in `/etc/stvrain-lunch-menu.env` |
+
+Either host can run **proxy mode** and forward `*menu.ics` to `Proxy__UpstreamBaseUrl` (typically `https://lunchmenu.debugthings.com`). Calendar URLs stay the same; only where `.ics` is generated changes.
+
+Lunch menus for 2026/27 use plan name `Elementary Lunch 26/27` (older years used `Elementary & PK Lunch`). Both match.
 
 ## Endpoints
 
@@ -23,13 +40,11 @@ The `/api/...` prefix from the old Azure Functions host still works (for example
 
 Query parameters: `buildingId`, `districtId`, `startDate`, `endDate`.
 
-Calendar apps can keep using:
+Calendar apps keep using:
 
 `https://stvrainlunchmenucalendar.azurewebsites.net/api/Lunchmenu.ics`
 
-Azure proxies that to:
-
-`https://lunchmenu.debugthings.com/api/Lunchmenu.ics`
+That URL works in **origin** mode (Azure calls LINQ) or **proxy** mode (Azure forwards to the LXC).
 
 ## SQLite cache (origin)
 
@@ -41,7 +56,42 @@ Raw LINQ `Menu` JSON is stored in SQLite, keyed by building, district, and date 
 | `Cache:TtlMinutes` / `Cache__TtlMinutes` | `360` | Fresh window (6 hours) |
 | `Cache:DatabasePath` / `Cache__DatabasePath` | `data/menu-cache.db` | Relative to the app content root |
 
-On a cache miss or expired row the app calls LINQ and upserts. If LINQ fails and a row exists, it serves **stale** JSON.
+On Azure, the relative path is stored under `$HOME` (writable). On the LXC it is under the app directory.
+
+## Deploy Azure Function App
+
+Same zip for both modes — only app settings change.
+
+**Origin (default)** — Azure calls LINQ, caches in SQLite:
+
+```bash
+az login   # if needed
+./deploy-azure.sh
+# or explicitly:
+DEPLOY_MODE=origin ./deploy-azure.sh
+```
+
+**Proxy** — Azure forwards to the LXC; no LINQ/SQLite on Azure:
+
+```bash
+DEPLOY_MODE=proxy PROXY_UPSTREAM_BASE_URL=https://lunchmenu.debugthings.com ./deploy-azure.sh
+```
+
+You can also flip modes in the Azure portal without redeploying:
+
+| Setting | Origin | Proxy |
+| --- | --- | --- |
+| `Proxy__Enabled` | `false` | `true` |
+| `Proxy__UpstreamBaseUrl` | (ignored) | `https://lunchmenu.debugthings.com` |
+| `Cache__Enabled` | `true` | `false` |
+
+Then verify:
+
+```bash
+curl -sS https://stvrainlunchmenucalendar.azurewebsites.net/api/Lunchmenu.ics | head
+```
+
+You should see `BEGIN:VEVENT`, not only a timezone.
 
 ## Run locally
 
@@ -150,19 +200,3 @@ pct exec <CTID> -- curl -sS http://127.0.0.1:8080/healthz
 ```
 
 Suggested resources: **1 vCPU**, **768 MiB RAM**, **4 GiB disk**, Debian 12 unprivileged LXC.
-
-## Deploy Azure proxy
-
-The Azure site must be a **Linux App Service** running this ASP.NET Core app (not an Azure Functions worker). Then:
-
-```bash
-./deploy-azure.sh
-```
-
-That publishes `linux-x64` and sets:
-
-- `Proxy__Enabled=true`
-- `Proxy__UpstreamBaseUrl=https://lunchmenu.debugthings.com` (override with `PROXY_UPSTREAM_BASE_URL`)
-- `Cache__Enabled=false`
-
-`/healthz` on Azure stays local and returns `Proxy` so platform probes do not depend on the LXC.

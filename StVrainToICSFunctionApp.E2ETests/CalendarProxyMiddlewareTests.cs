@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using StVrainToICSFunctionApp.Middleware;
 using StVrainToICSFunctionApp.Options;
+using StVrainToICSFunctionApp.Services;
 using Xunit;
 
 namespace StVrainToICSFunctionApp.E2ETests;
@@ -16,21 +17,21 @@ public sealed class CalendarProxyMiddlewareTests
     {
         RecordingHandler handler = new();
         CalendarProxyMiddleware middleware = new(_ => Task.CompletedTask);
-        DefaultHttpContext context = new();
-        context.Request.Method = HttpMethods.Get;
-        context.Request.Path = "/api/Lunchmenu.ics";
-        context.Request.QueryString = new QueryString("?buildingId=abc&districtId=xyz");
-        context.Response.Body = new MemoryStream();
-
-        await middleware.InvokeAsync(
-            context,
+        CalendarProxyService proxy = new(
             new StubHttpClientFactory(handler),
             Microsoft.Extensions.Options.Options.Create(new ProxyOptions
             {
                 Enabled = true,
                 UpstreamBaseUrl = "https://lunchmenu.debugthings.com",
             }),
-            NullLogger<CalendarProxyMiddleware>.Instance);
+            NullLogger<CalendarProxyService>.Instance);
+        DefaultHttpContext context = new();
+        context.Request.Method = HttpMethods.Get;
+        context.Request.Path = "/api/Lunchmenu.ics";
+        context.Request.QueryString = new QueryString("?buildingId=abc&districtId=xyz");
+        context.Response.Body = new MemoryStream();
+
+        await middleware.InvokeAsync(context, proxy);
 
         Assert.Equal(200, context.Response.StatusCode);
         Assert.StartsWith("text/calendar", context.Response.ContentType);
@@ -50,14 +51,14 @@ public sealed class CalendarProxyMiddlewareTests
             nextCalled = true;
             return Task.CompletedTask;
         });
+        CalendarProxyService proxy = new(
+            new StubHttpClientFactory(new RecordingHandler()),
+            Microsoft.Extensions.Options.Options.Create(new ProxyOptions { Enabled = true, UpstreamBaseUrl = "https://lunchmenu.debugthings.com" }),
+            NullLogger<CalendarProxyService>.Instance);
         DefaultHttpContext context = new();
         context.Request.Path = "/healthz";
 
-        await middleware.InvokeAsync(
-            context,
-            new StubHttpClientFactory(new RecordingHandler()),
-            Microsoft.Extensions.Options.Options.Create(new ProxyOptions { Enabled = true, UpstreamBaseUrl = "https://lunchmenu.debugthings.com" }),
-            NullLogger<CalendarProxyMiddleware>.Instance);
+        await middleware.InvokeAsync(context, proxy);
 
         Assert.True(nextCalled);
     }
@@ -66,15 +67,15 @@ public sealed class CalendarProxyMiddlewareTests
     public async Task Upstream_failure_returns_502()
     {
         CalendarProxyMiddleware middleware = new(_ => Task.CompletedTask);
+        CalendarProxyService proxy = new(
+            new StubHttpClientFactory(new ThrowingHandler()),
+            Microsoft.Extensions.Options.Options.Create(new ProxyOptions { Enabled = true, UpstreamBaseUrl = "https://lunchmenu.debugthings.com" }),
+            NullLogger<CalendarProxyService>.Instance);
         DefaultHttpContext context = new();
         context.Request.Path = "/Lunchmenu.ics";
         context.Response.Body = new MemoryStream();
 
-        await middleware.InvokeAsync(
-            context,
-            new StubHttpClientFactory(new ThrowingHandler()),
-            Microsoft.Extensions.Options.Options.Create(new ProxyOptions { Enabled = true, UpstreamBaseUrl = "https://lunchmenu.debugthings.com" }),
-            NullLogger<CalendarProxyMiddleware>.Instance);
+        await middleware.InvokeAsync(context, proxy);
 
         Assert.Equal(StatusCodes.Status502BadGateway, context.Response.StatusCode);
     }

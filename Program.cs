@@ -1,101 +1,115 @@
 using Azure.Monitor.OpenTelemetry.Exporter;
 using Microsoft.AspNetCore.HttpLogging;
-using Microsoft.EntityFrameworkCore;
+using Microsoft.Azure.Functions.Worker.Builder;
 using StVrainToICSFunctionApp;
-using StVrainToICSFunctionApp.Data;
-using StVrainToICSFunctionApp.Formatters;
 using StVrainToICSFunctionApp.Middleware;
 using StVrainToICSFunctionApp.Options;
-using StVrainToICSFunctionApp.Services;
 
-var builder = WebApplication.CreateBuilder(args);
-
-builder.Logging.AddConsole();
-
-builder.Services.Configure<CacheOptions>(builder.Configuration.GetSection(CacheOptions.SectionName));
-builder.Services.Configure<ProxyOptions>(builder.Configuration.GetSection(ProxyOptions.SectionName));
-
+bool functionsHost = IsAzureFunctionsHost();
 var appInsightsConnectionString = Environment.GetEnvironmentVariable("APPLICATIONINSIGHTS_CONNECTION_STRING");
-if (!string.IsNullOrWhiteSpace(appInsightsConnectionString))
-{
-    builder.Services.AddOpenTelemetry()
-        .WithLogging(_ => { }, static o => o.IncludeFormattedMessage = true)
-        .UseAzureMonitorExporter();
-}
 
-bool proxyEnabled = builder.Configuration.GetValue<bool>("Proxy:Enabled");
-
-if (proxyEnabled)
+if (functionsHost)
 {
-    builder.Services.AddHttpClient("Proxy", client =>
+    var builder = FunctionsApplication.CreateBuilder(args);
+    builder.ConfigureFunctionsWebApplication();
+    builder.Logging.AddConsole();
+    ConfigureShared(builder.Services, builder.Configuration);
+    RegisterMode(builder.Services, builder.Configuration, builder.Environment.ContentRootPath, functionsHost: true);
+
+    if (!string.IsNullOrWhiteSpace(appInsightsConnectionString))
     {
-        client.Timeout = TimeSpan.FromSeconds(60);
-    });
+        builder.Services.AddOpenTelemetry()
+            .WithLogging(_ => { }, static o => o.IncludeFormattedMessage = true)
+            .UseAzureMonitorExporter();
+    }
+
+    var host = builder.Build();
+    if (!LunchMenuHostExtensions.IsProxyEnabled(host.Services.GetRequiredService<IConfiguration>()))
+    {
+        host.Services.EnsureMenuCacheCreated();
+    }
+
+    host.Run();
 }
 else
 {
-    builder.Services.AddControllers(controllers =>
-    {
-        controllers.OutputFormatters.Add(new ICSTextOutputFormatter());
-    });
+    var builder = WebApplication.CreateBuilder(args);
+    builder.Logging.AddConsole();
+    ConfigureShared(builder.Services, builder.Configuration);
+    RegisterMode(builder.Services, builder.Configuration, builder.Environment.ContentRootPath, functionsHost: false);
 
-    builder.Services.AddHttpLogging(o =>
+    if (!string.IsNullOrWhiteSpace(appInsightsConnectionString))
     {
-        o.LoggingFields = HttpLoggingFields.RequestPropertiesAndHeaders | HttpLoggingFields.ResponseStatusCode;
-    });
-
-    builder.Services.AddLinqConnectHttpClient();
-    builder.Services.AddSingleton<ILinqMenuClient, LinqMenuClient>();
-
-    string dbPath = builder.Configuration.GetValue<string>("Cache:DatabasePath") ?? "data/menu-cache.db";
-    if (!Path.IsPathRooted(dbPath))
-    {
-        dbPath = Path.Combine(builder.Environment.ContentRootPath, dbPath);
+        builder.Services.AddOpenTelemetry()
+            .WithLogging(_ => { }, static o => o.IncludeFormattedMessage = true)
+            .UseAzureMonitorExporter();
     }
 
-    string? dbDir = Path.GetDirectoryName(dbPath);
-    if (!string.IsNullOrEmpty(dbDir))
+    var app = builder.Build();
+    bool proxyEnabled = LunchMenuHostExtensions.IsProxyEnabled(app.Configuration);
+
+    if (proxyEnabled)
     {
-        Directory.CreateDirectory(dbDir);
+        app.UseMiddleware<CalendarProxyMiddleware>();
+    }
+    else
+    {
+        app.Services.EnsureMenuCacheCreated();
+        if (app.Environment.IsDevelopment())
+        {
+            app.UseHttpLogging();
+        }
+
+        app.MapControllers();
     }
 
-    builder.Services.AddDbContext<MenuCacheDbContext>(options => options.UseSqlite($"Data Source={dbPath}"));
-    builder.Services.AddScoped<IMenuCacheService, MenuCacheService>();
+    app.MapGet("/healthz", () => Results.Text(LunchMenuHostExtensions.HealthText(app.Configuration), "text/plain"));
+    app.MapGet("/", () => Results.Text(
+        $"""
+        St. Vrain lunch menu calendar ({LunchMenuHostExtensions.ModeDescription(app.Configuration)})
+        GET /Lunchmenu.ics
+        GET /Breakfastmenu.ics
+        GET /Academicmenu.ics
+        GET /healthz
+        """,
+        "text/plain"));
+    app.Run();
 }
 
-var app = builder.Build();
-
-if (proxyEnabled)
+static void ConfigureShared(IServiceCollection services, IConfiguration configuration)
 {
-    app.UseMiddleware<CalendarProxyMiddleware>();
+    services.Configure<CacheOptions>(configuration.GetSection(CacheOptions.SectionName));
+    services.Configure<ProxyOptions>(configuration.GetSection(ProxyOptions.SectionName));
 }
-else
+
+static void RegisterMode(IServiceCollection services, IConfiguration configuration, string contentRootPath, bool functionsHost)
 {
-    using (IServiceScope scope = app.Services.CreateScope())
+    if (LunchMenuHostExtensions.IsProxyEnabled(configuration))
     {
-        MenuCacheDbContext db = scope.ServiceProvider.GetRequiredService<MenuCacheDbContext>();
-        db.Database.EnsureCreated();
+        services.AddLunchMenuProxy();
+        if (!functionsHost)
+        {
+            // Kestrel proxy uses middleware; Functions uses ConvertToICS + ProxyMenuCalendarService.
+        }
     }
-
-    if (app.Environment.IsDevelopment())
+    else
     {
-        app.UseHttpLogging();
-    }
+        if (!functionsHost)
+        {
+            services.AddHttpLogging(o =>
+            {
+                o.LoggingFields = HttpLoggingFields.RequestPropertiesAndHeaders | HttpLoggingFields.ResponseStatusCode;
+            });
+        }
 
-    app.MapControllers();
+        services.AddLunchMenuOriginServices(configuration, contentRootPath);
+    }
 }
 
-app.MapGet("/healthz", () => Results.Text(proxyEnabled ? "Proxy" : "Healthy", "text/plain"));
-app.MapGet("/", () => Results.Text(
-    """
-    St. Vrain lunch menu calendar
-    GET /Lunchmenu.ics
-    GET /Breakfastmenu.ics
-    GET /Academicmenu.ics
-    GET /healthz
-    """,
-    "text/plain"));
-
-app.Run();
+static bool IsAzureFunctionsHost()
+{
+    string? runtime = Environment.GetEnvironmentVariable("FUNCTIONS_WORKER_RUNTIME");
+    return !string.IsNullOrWhiteSpace(runtime);
+}
 
 public partial class Program;
