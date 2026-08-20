@@ -22,22 +22,43 @@ namespace StVrainToICSFunctionApp
         }
 
         /// <summary>
-        /// Gets the menu from the supplied parameters and returns it as iCalendar.
+        /// Azure Functions HTTP trigger (Kestrel uses <see cref="CreateMenu"/> below).
         /// </summary>
         [Function("createmenu")]
-        [HttpGet("/{inputSession}menu.ics")]
-        [HttpGet("/api/{inputSession}menu.ics")]
-        public async Task<IActionResult> CreateMenu(
-            [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "{inputSession}menu.ics")] HttpRequest _,
+        [NonAction]
+        public Task<IActionResult> CreateMenuFunction(
+            [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "{inputSession}menu.ics")] HttpRequest request,
             [FromRoute] Session inputSession = Session.None,
             [FromQuery] string buildingId = buildingId,
             [FromQuery] string districtId = districtId,
             [FromQuery] DateTime? startDate = null,
-            [FromQuery] DateTime? endDate = null)
+            [FromQuery] DateTime? endDate = null) =>
+            CreateMenuCoreAsync(request.HttpContext, inputSession, buildingId, districtId, startDate, endDate);
+
+        /// <summary>
+        /// Kestrel / LXC routes (Functions host uses <see cref="CreateMenuFunction"/>).
+        /// </summary>
+        [HttpGet("/{inputSession}menu.ics")]
+        [HttpGet("/api/{inputSession}menu.ics")]
+        public Task<IActionResult> CreateMenu(
+            [FromRoute] Session inputSession = Session.None,
+            [FromQuery] string buildingId = buildingId,
+            [FromQuery] string districtId = districtId,
+            [FromQuery] DateTime? startDate = null,
+            [FromQuery] DateTime? endDate = null) =>
+            CreateMenuCoreAsync(HttpContext, inputSession, buildingId, districtId, startDate, endDate);
+
+        private async Task<IActionResult> CreateMenuCoreAsync(
+            HttpContext httpContext,
+            Session inputSession,
+            string buildingId,
+            string districtId,
+            DateTime? startDate,
+            DateTime? endDate)
         {
             try
             {
-                return await _calendar.CreateMenuAsync(HttpContext, inputSession, buildingId, districtId, startDate, endDate)
+                return await _calendar.CreateMenuAsync(httpContext, inputSession, buildingId, districtId, startDate, endDate)
                     .ConfigureAwait(false);
             }
             catch (InvalidOperationException)
