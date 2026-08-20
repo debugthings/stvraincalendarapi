@@ -99,77 +99,62 @@ namespace StVrainToICSFunctionApp.Formatters
                         {
                             foreach (var menuplan in familymenusession?.MenuPlans ?? [])
                             {
-                                // Breakfast: "Breakfast {yyyy}" or "Breakfast in Cafe".
-                                // Lunch: "Elementary & PK Lunch {yyyy}" (older) or "Elementary Lunch 26/27".
-                                var menuPlan = menuplan.MenuPlanName ?? string.Empty;
-                                bool isWhatWeWant = false;
-
-                                switch (session)
+                                // FamilyMenuSession.ServingSession (Breakfast/Lunch) is the filter; plan names
+                                // vary by school level (Elementary Lunch, Middle School Lunch, etc.).
+                                logger.LogInformation(
+                                    "Using menu plan {MenuPlanName} for {Session} (ServingSession={ServingSession}).",
+                                    menuplan.MenuPlanName,
+                                    inputSession,
+                                    sessionName);
+                                logger.LogInformation("Starting the creation of the {Session} calendar events.", inputSession);
+                                logger.LogInformation("Using {TimeZone} for the time zone.", defaultTimeZone);
+                                foreach (var day in menuplan?.Days ?? [])
                                 {
-                                    case Session.Breakfast:
-                                        isWhatWeWant = menuPlan.StartsWith("Breakfast", StringComparison.OrdinalIgnoreCase);
-                                        break;
-                                    case Session.Lunch:
-                                        isWhatWeWant =
-                                            menuPlan.StartsWith("Elementary Lunch", StringComparison.OrdinalIgnoreCase)
-                                            || menuPlan.StartsWith("Elementary & PK Lunch", StringComparison.OrdinalIgnoreCase);
-                                        break;
-                                    default:
-                                        break;
-                                }
-
-                                if (isWhatWeWant)
-                                {
-                                    logger.LogInformation("Starting the creation of the {Session} calendar events.", inputSession);
-                                    logger.LogInformation("Using {TimeZone} for the time zone.", defaultTimeZone);
-                                    foreach (var day in menuplan?.Days ?? [])
+                                    if (!string.IsNullOrEmpty(day.Date))
                                     {
-                                        if (!string.IsNullOrEmpty(day.Date))
-                                        {
-                                            // The day of the week for the meal.
-                                            DateTime dateTimeOffset = DateTime.Parse(day.Date, CultureInfo.InvariantCulture);
-                                            // The session enum has the lunch hour set as the value so we don't have to do any switching
-                                            var date = dateTimeOffset.AddHours((int)session).AddMinutes(30);
+                                        // The day of the week for the meal.
+                                        DateTime dateTimeOffset = DateTime.Parse(day.Date, CultureInfo.InvariantCulture);
+                                        // The session enum has the lunch hour set as the value so we don't have to do any switching
+                                        var date = dateTimeOffset.AddHours((int)session).AddMinutes(30);
 
-                                            foreach (var menumeal in day?.MenuMeals ?? [])
+                                        foreach (var menumeal in day?.MenuMeals ?? [])
+                                        {
+                                            if (menumeal != null)
                                             {
-                                                if (menumeal != null)
+                                                // Only add the meals
+                                                IEnumerable<Recipe[]?> recipeMeals = menumeal?.RecipeCategories?.Where(rc => !string.IsNullOrEmpty(rc.CategoryName) && rc.CategoryName.Equals("Meal", StringComparison.OrdinalIgnoreCase)).Select(rc => rc.Recipes) ?? [];
+                                                if (recipeMeals.Any())
                                                 {
-                                                    // Only add the meals
-                                                    IEnumerable<Recipe[]?> recipeMeals = menumeal?.RecipeCategories?.Where(rc => !string.IsNullOrEmpty(rc.CategoryName) && rc.CategoryName.Equals("Meal", StringComparison.OrdinalIgnoreCase)).Select(rc => rc.Recipes) ?? [];
-                                                    if (recipeMeals.Any())
+                                                    foreach (var recipes in recipeMeals)
                                                     {
-                                                        foreach (var recipes in recipeMeals)
+                                                        for (int i = 0; i < (recipes?.Length ?? 0); i++)
                                                         {
-                                                            for (int i = 0; i < (recipes?.Length ?? 0); i++)
+                                                            string recipeName = recipes?[i]?.RecipeName ?? "Item Name Empty";
+                                                            if (i < (recipes?.Length ?? 0) - 1)
                                                             {
-                                                                string recipeName = recipes?[i]?.RecipeName ?? "Item Name Empty";
-                                                                if (i < (recipes?.Length ?? 0) - 1)
-                                                                {
-                                                                    sb.AppendLine(recipeName);
-                                                                }
-                                                                else
-                                                                {
-                                                                    sb.Append(recipeName);
-                                                                }
+                                                                sb.AppendLine(recipeName);
+                                                            }
+                                                            else
+                                                            {
+                                                                sb.Append(recipeName);
                                                             }
                                                         }
-                                                        var calendarEvent = new CalendarEvent
-                                                        {
-                                                            // If Name property is used, it MUST be RFC 5545 compliant
-                                                            Summary = menumeal?.MenuMealName ?? "Meal Name Empty", // Should always be present
-                                                            Description = sb.ToString(), // optional
-                                                            Start = new CalDateTime(date),
-                                                            End = new CalDateTime(date.AddMinutes(30)),
-                                                        };
-                                                        sb.Clear();
-                                                        calendar.Events.Add(calendarEvent);
-                                                        logger.LogInformation(
-                                                            "Added {Summary} on {Start} to the {Session} calendar.",
-                                                            calendarEvent.Summary,
-                                                            calendarEvent.Start,
-                                                            inputSession);
                                                     }
+                                                    var calendarEvent = new CalendarEvent
+                                                    {
+                                                        // If Name property is used, it MUST be RFC 5545 compliant
+                                                        Summary = menumeal?.MenuMealName ?? "Meal Name Empty", // Should always be present
+                                                        Description = sb.ToString(), // optional
+                                                        Start = new CalDateTime(date),
+                                                        End = new CalDateTime(date.AddMinutes(30)),
+                                                    };
+                                                    sb.Clear();
+                                                    calendar.Events.Add(calendarEvent);
+                                                    logger.LogInformation(
+                                                        "Added {Summary} on {Start} to the {Session} calendar.",
+                                                        calendarEvent.Summary,
+                                                        calendarEvent.Start,
+                                                        inputSession);
                                                 }
                                             }
                                         }

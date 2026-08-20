@@ -24,7 +24,7 @@ One codebase, two hosts, switchable by config:
 
 Either host can run **proxy mode** and forward `*menu.ics` to `Proxy__UpstreamBaseUrl` (typically `https://lunchmenu.debugthings.com`). Calendar URLs stay the same; only where `.ics` is generated changes.
 
-Lunch menus for 2026/27 use plan name `Elementary Lunch 26/27` (older years used `Elementary & PK Lunch`). Both match.
+Lunch menus use `FamilyMenuSession.ServingSession` (for example `"Lunch"`). Plan names vary by school level (`Elementary Lunch 26/27`, `Middle School Lunch 26/27`, legacy `Elementary & PK Lunch`). All plans under the matching serving session are included.
 
 ## Endpoints
 
