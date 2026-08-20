@@ -30,15 +30,24 @@ Lunch menus use `FamilyMenuSession.ServingSession` (for example `"Lunch"`). Plan
 
 | Path | Description |
 | --- | --- |
-| `GET /Lunchmenu.ics` | Elementary & PK lunch |
+| `GET /Lunchmenu.ics` | Default building lunch (query params optional) |
 | `GET /Breakfastmenu.ics` | Breakfast |
 | `GET /Academicmenu.ics` | Academic calendar notes |
+| `GET /{districtId}/{buildingId}/lunchmenu.ics` | Lunch for a specific school (Google Calendar–friendly) |
+| `GET /{districtId}/{buildingId}/breakfastmenu.ics` | Breakfast for a specific school |
+| `GET /{districtId}/{buildingId}/academicmenu.ics` | Academic calendar for a specific school |
 | `GET /healthz` | Liveness (`Healthy` in origin mode, `Proxy` in proxy mode) |
 | `GET /` | Short usage text |
 
 The `/api/...` prefix from the old Azure Functions host still works (for example `/api/Lunchmenu.ics`).
 
-Query parameters: `buildingId`, `districtId`, `startDate`, `endDate`.
+Query parameters (optional on the default URLs): `buildingId`, `districtId`, `startDate`, `endDate`.
+
+**Google Calendar** does not reliably accept query strings on subscribe URLs. Use the path form instead of `?buildingId=&districtId=`:
+
+```
+https://lunchmenu.debugthings.com/55485575-09b2-ed11-8e69-f29174b2df22/3805e0fd-bdbe-ed11-82b1-880d996bcdd8/lunchmenu.ics
+```
 
 Calendar apps keep using:
 

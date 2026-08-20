@@ -36,6 +36,20 @@ namespace StVrainToICSFunctionApp
             CreateMenuCoreAsync(request.HttpContext, inputSession, buildingId, districtId, startDate, endDate);
 
         /// <summary>
+        /// Path-based calendar URL for clients that reject query strings (Google Calendar).
+        /// </summary>
+        [Function("createmenuByLocation")]
+        [NonAction]
+        public Task<IActionResult> CreateMenuByLocationFunction(
+            [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "{districtId}/{buildingId}/{inputSession}menu.ics")] HttpRequest request,
+            [FromRoute] string districtId,
+            [FromRoute] string buildingId,
+            [FromRoute] Session inputSession = Session.None,
+            [FromQuery] DateTime? startDate = null,
+            [FromQuery] DateTime? endDate = null) =>
+            CreateMenuCoreAsync(request.HttpContext, inputSession, buildingId, districtId, startDate, endDate);
+
+        /// <summary>
         /// Kestrel / LXC routes (Functions host uses <see cref="CreateMenuFunction"/>).
         /// </summary>
         [HttpGet("/{inputSession}menu.ics")]
@@ -44,6 +58,19 @@ namespace StVrainToICSFunctionApp
             [FromRoute] Session inputSession = Session.None,
             [FromQuery] string buildingId = buildingId,
             [FromQuery] string districtId = districtId,
+            [FromQuery] DateTime? startDate = null,
+            [FromQuery] DateTime? endDate = null) =>
+            CreateMenuCoreAsync(HttpContext, inputSession, buildingId, districtId, startDate, endDate);
+
+        /// <summary>
+        /// Google Calendar–friendly route: /{districtId}/{buildingId}/lunchmenu.ics
+        /// </summary>
+        [HttpGet("/{districtId}/{buildingId}/{inputSession}menu.ics")]
+        [HttpGet("/api/{districtId}/{buildingId}/{inputSession}menu.ics")]
+        public Task<IActionResult> CreateMenuByLocation(
+            [FromRoute] string districtId,
+            [FromRoute] string buildingId,
+            [FromRoute] Session inputSession = Session.None,
             [FromQuery] DateTime? startDate = null,
             [FromQuery] DateTime? endDate = null) =>
             CreateMenuCoreAsync(HttpContext, inputSession, buildingId, districtId, startDate, endDate);

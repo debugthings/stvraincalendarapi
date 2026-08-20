@@ -65,11 +65,12 @@ else
 
     app.MapGet("/healthz", () => Results.Text(LunchMenuHostExtensions.HealthText(app.Configuration), "text/plain"));
     app.MapGet("/", () => Results.Text(
-        $"""
-        St. Vrain lunch menu calendar ({LunchMenuHostExtensions.ModeDescription(app.Configuration)})
+        $$"""
+        St. Vrain lunch menu calendar ({{LunchMenuHostExtensions.ModeDescription(app.Configuration)}})
         GET /Lunchmenu.ics
         GET /Breakfastmenu.ics
         GET /Academicmenu.ics
+        GET /{districtId}/{buildingId}/lunchmenu.ics
         GET /healthz
         """,
         "text/plain"));
