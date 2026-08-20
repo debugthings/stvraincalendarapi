@@ -151,28 +151,36 @@ namespace StVrainToICSFunctionApp.Formatters
                                             {
                                                 continue;
                                             }
-                                            Recipe? titleRecipe = menumeal?.RecipeCategories is { Length: > 0 } categories
-                                                && categories[0].Recipes is { Length: > 0 } recipes
-                                                ? recipes[0]
-                                                : null;
-                                            string? summary = titleRecipe?.RecipeName;
+
+                                            string? summary = menumeal?.MenuMealName;
                                             if (string.IsNullOrEmpty(summary))
                                             {
                                                 continue;
                                             }
 
-                                            IEnumerable<string> otherNames = menumeal?.RecipeCategories?
-                                                .SelectMany(rc => rc.Recipes ?? [])
-                                                .Select(r => r.RecipeName)
-                                                .Where(name => !string.IsNullOrEmpty(name) && name != summary)
-                                                .Cast<string>()
+                                            IEnumerable<Recipe[]?> recipeMeals = menumeal?.RecipeCategories?
+                                                .Where(rc => !string.IsNullOrEmpty(rc.CategoryName) && rc.CategoryName.Equals("Meal", StringComparison.OrdinalIgnoreCase))
+                                                .Select(rc => rc.Recipes)
                                                 ?? [];
-                                            string description = string.Join(Environment.NewLine, otherNames);
+                                            if (!recipeMeals.Any())
+                                            {
+                                                continue;
+                                            }
+
+                                            var recipeNames = new List<string>();
+                                            foreach (var recipes in recipeMeals)
+                                            {
+                                                for (int i = 0; i < (recipes?.Length ?? 0); i++)
+                                                {
+                                                    string recipeName = recipes?[i]?.RecipeName ?? "Item Name Empty";
+                                                    recipeNames.Add(recipeName);
+                                                }
+                                            }
 
                                             var calendarEvent = new CalendarEvent
                                             {
                                                 Summary = summary,
-                                                Description = description,
+                                                Description = string.Join(Environment.NewLine, recipeNames),
                                                 Start = new CalDateTime(date),
                                                 End = new CalDateTime(date.AddMinutes(30)),
                                             };
