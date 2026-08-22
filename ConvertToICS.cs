@@ -109,53 +109,63 @@ namespace StVrainToICSFunctionApp
             CreateMenuCoreAsync(HttpContext, inputSession, buildingId, districtId, startDate, endDate, displayTime);
 
         /// <summary>
-        /// Short school codes for Google Calendar (no GUIDs): /rhe/lunchmenu, /ems/lunchmenu.
+        /// Short school codes for Google Calendar (no GUIDs): /rhe/lunchmenu, /ems/breakfastmenu.
         /// </summary>
         [Function("createmenuBySchool")]
         [NonAction]
         public Task<IActionResult> CreateMenuBySchoolFunction(
-            [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "{school}/lunchmenu.ics")] HttpRequest request,
+            [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "{school}/{inputSession}menu.ics")] HttpRequest request,
             [FromRoute] string school,
+            [FromRoute] Session inputSession = Session.None,
             [FromQuery] DateTime? startDate = null,
             [FromQuery] DateTime? endDate = null) =>
-            CreateMenuBySchoolAsync(request.HttpContext, school, startDate, endDate);
+            CreateMenuBySchoolAsync(request.HttpContext, school, inputSession, startDate, endDate);
 
         [Function("createmenuBySchoolBare")]
         [NonAction]
         public Task<IActionResult> CreateMenuBySchoolBareFunction(
-            [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "{school}/lunchmenu")] HttpRequest request,
+            [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "{school}/{inputSession}menu")] HttpRequest request,
             [FromRoute] string school,
+            [FromRoute] Session inputSession = Session.None,
             [FromQuery] DateTime? startDate = null,
             [FromQuery] DateTime? endDate = null) =>
-            CreateMenuBySchoolAsync(request.HttpContext, school, startDate, endDate);
+            CreateMenuBySchoolAsync(request.HttpContext, school, inputSession, startDate, endDate);
 
-        [HttpGet("/{school:regex(^[[a-zA-Z]]{{2,8}}$)}/lunchmenu")]
-        [HttpGet("/{school:regex(^[[a-zA-Z]]{{2,8}}$)}/lunchmenu.ics")]
-        [HttpGet("/api/{school:regex(^[[a-zA-Z]]{{2,8}}$)}/lunchmenu")]
-        [HttpGet("/api/{school:regex(^[[a-zA-Z]]{{2,8}}$)}/lunchmenu.ics")]
+        [HttpGet("/{school:regex(^[[a-zA-Z]]{{2,8}}$)}/{inputSession}menu")]
+        [HttpGet("/{school:regex(^[[a-zA-Z]]{{2,8}}$)}/{inputSession}menu.ics")]
+        [HttpGet("/api/{school:regex(^[[a-zA-Z]]{{2,8}}$)}/{inputSession}menu")]
+        [HttpGet("/api/{school:regex(^[[a-zA-Z]]{{2,8}}$)}/{inputSession}menu.ics")]
         public Task<IActionResult> CreateMenuBySchool(
             [FromRoute] string school,
+            [FromRoute] Session inputSession = Session.None,
             [FromQuery] DateTime? startDate = null,
             [FromQuery] DateTime? endDate = null) =>
-            CreateMenuBySchoolAsync(HttpContext, school, startDate, endDate);
+            CreateMenuBySchoolAsync(HttpContext, school, inputSession, startDate, endDate);
 
         private Task<IActionResult> CreateMenuBySchoolAsync(
             HttpContext httpContext,
             string school,
+            Session inputSession,
             DateTime? startDate,
             DateTime? endDate)
         {
-            if (!_schools.TryGet(school, out SchoolShortcut shortcut)
+            if (inputSession is not Session.Lunch and not Session.Breakfast and not Session.Academic
+                || !_schools.TryGet(school, out SchoolShortcut shortcut)
                 || string.IsNullOrWhiteSpace(shortcut.BuildingId)
                 || string.IsNullOrWhiteSpace(shortcut.DistrictId))
             {
                 return Task.FromResult<IActionResult>(new NotFoundResult());
             }
 
-            int? displayTime = shortcut.DefaultDisplayTime == 0 ? null : shortcut.DefaultDisplayTime;
+            int? displayTime = inputSession switch
+            {
+                Session.Lunch when shortcut.DefaultDisplayTime != 0 => shortcut.DefaultDisplayTime,
+                Session.Breakfast => shortcut.DefaultBreakfastDisplayTime == 0 ? 830 : shortcut.DefaultBreakfastDisplayTime,
+                _ => null,
+            };
             return CreateMenuCoreAsync(
                 httpContext,
-                Session.Lunch,
+                inputSession,
                 shortcut.BuildingId,
                 shortcut.DistrictId,
                 startDate,

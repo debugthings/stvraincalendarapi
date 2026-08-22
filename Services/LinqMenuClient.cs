@@ -32,4 +32,22 @@ public sealed class LinqMenuClient : ILinqMenuClient
 
         return fetched;
     }
+
+    public async Task<FamilyMenuIdentifierResponse> GetFamilyMenuIdentifiersAsync(
+        string identifier,
+        CancellationToken cancellationToken = default)
+    {
+        HttpClient client = _clientFactory.CreateClient("LINQ");
+        FamilyMenuIdentifierResponse? fetched = await client.GetFromJsonAsync<FamilyMenuIdentifierResponse>(
+            $"/api/FamilyMenuIdentifier?identifier={Uri.EscapeDataString(identifier)}",
+            cancellationToken).ConfigureAwait(false);
+
+        if (fetched is null)
+        {
+            throw new InvalidOperationException(
+                $"The FamilyMenuIdentifier api for identifier {identifier} returned no content.");
+        }
+
+        return fetched;
+    }
 }

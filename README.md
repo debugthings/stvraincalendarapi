@@ -32,6 +32,8 @@ Lunch menus use `FamilyMenuSession.ServingSession` (for example `"Lunch"`). Plan
 | --- | --- |
 | `GET /rhe/lunchmenu` | Redhawk Elementary lunch at 11:30 |
 | `GET /ems/lunchmenu` | Erie Middle lunch at 12:00 |
+| `GET /rhe/breakfastmenu` | Redhawk Elementary breakfast at 8:30 |
+| `GET /ems/breakfastmenu` | Erie Middle breakfast at 8:30 |
 | `GET /Lunchmenu.ics` | Default building lunch (query params optional) |
 | `GET /Breakfastmenu.ics` | Breakfast |
 | `GET /Academicmenu.ics` | Academic calendar notes |
@@ -44,6 +46,8 @@ Lunch menus use `FamilyMenuSession.ServingSession` (for example `"Lunch"`). Plan
 ```
 https://lunchmenu.debugthings.com/rhe/lunchmenu
 https://lunchmenu.debugthings.com/ems/lunchmenu
+https://lunchmenu.debugthings.com/rhe/breakfastmenu
+https://lunchmenu.debugthings.com/ems/breakfastmenu
 ```
 
 Calendar apps keep using:

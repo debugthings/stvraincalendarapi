@@ -10,4 +10,8 @@ public interface ILinqMenuClient
         DateTime startDate,
         DateTime endDate,
         CancellationToken cancellationToken = default);
+
+    Task<FamilyMenuIdentifierResponse> GetFamilyMenuIdentifiersAsync(
+        string identifier,
+        CancellationToken cancellationToken = default);
 }

@@ -8,6 +8,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Net.Http.Headers;
 using StVrainToICSFunctionApp.Models;
+using StVrainToICSFunctionApp.Services;
 using System.Text;
 
 namespace StVrainToICSFunctionApp.Formatters
@@ -16,6 +17,7 @@ namespace StVrainToICSFunctionApp.Formatters
     {
         public const string inputSessionContext = "inputsession";
         public const string displayTimeHhmmContext = "displaytimehhmm";
+        public const string sectionFilterContext = "sectionfilter";
         private const string calendarType = "text/calendar";
         private const string defaultTimeZone = "America/Denver";
         private const int baseMinutesPastHour = 30;
@@ -64,14 +66,32 @@ namespace StVrainToICSFunctionApp.Formatters
                     int? displayTimeHhmm = httpContext.Items.TryGetValue(displayTimeHhmmContext, out object? timeObj) && timeObj is int hhmm
                         ? hhmm
                         : null;
-                    outPut = FormatMenuToICS(menu, inputSession, displayTimeHhmm, logger);
+                    CalendarSectionFilter? sectionFilter =
+                        httpContext.Items.TryGetValue(sectionFilterContext, out object? filterObj)
+                        && filterObj is CalendarSectionFilter filter
+                            ? filter
+                            : null;
+                    outPut = FormatMenuToICS(menu, inputSession, displayTimeHhmm, sectionFilter, logger);
                 }
             }
 
             await httpContext.Response.WriteAsync(outPut, selectedEncoding);
         }
 
-        private string FormatMenuToICS(Menu menu, Session inputSession, int? displayTimeHhmm, ILogger<ConvertToICS> logger)
+        private string FormatMenuToICS(
+            Menu menu,
+            Session inputSession,
+            int? displayTimeHhmm,
+            CalendarSectionFilter? sectionFilter,
+            ILogger<ConvertToICS> logger) =>
+            FormatMenuToICSCore(menu, inputSession, displayTimeHhmm, sectionFilter, logger);
+
+        internal static string FormatMenuToICSCore(
+            Menu menu,
+            Session inputSession,
+            int? displayTimeHhmm,
+            CalendarSectionFilter? sectionFilter,
+            ILogger logger)
         {
             var sb = new StringBuilder();
             // The calendar wants a timezone.
@@ -114,83 +134,105 @@ namespace StVrainToICSFunctionApp.Formatters
                 {
                     foreach (var familymenusession in menu?.FamilyMenuSessions ?? [])
                     {
-                        // This is Breakfast, Lunch, Snacks
-                        // We only care about Breakfast and Lunch
+                        // Breakfast, Lunch, snacks, etc.
                         var sessionName = familymenusession.ServingSession;
-                        if (Enum.TryParse(sessionName, out Session session) && session == inputSession)
+                        if (string.IsNullOrEmpty(sessionName))
                         {
-                            foreach (var menuplan in familymenusession?.MenuPlans ?? [])
+                            continue;
+                        }
+
+                        bool filterDriven = sectionFilter is not null;
+                        if (filterDriven)
+                        {
+                            if (!sectionFilter!.AllowsSession(sessionName))
                             {
-                                if (IsSuperSnack(menuplan))
-                                {
-                                    logger.LogInformation("Skipping super snack plan {MenuPlanName}.", menuplan.MenuPlanName);
-                                    continue;
-                                }
+                                continue;
+                            }
+                        }
+                        else if (!Enum.TryParse(sessionName, out Session parsed) || parsed != inputSession)
+                        {
+                            continue;
+                        }
 
-                                // FamilyMenuSession.ServingSession (Breakfast/Lunch) is the filter; plan names
-                                // vary by school level (Elementary Lunch, Middle School Lunch, etc.).
-                                logger.LogInformation(
-                                    "Using menu plan {MenuPlanName} for {Session} (ServingSession={ServingSession}).",
-                                    menuplan.MenuPlanName,
-                                    inputSession,
-                                    sessionName);
-                                logger.LogInformation("Starting the creation of the {Session} calendar events.", inputSession);
-                                logger.LogInformation("Using {TimeZone} for the time zone.", defaultTimeZone);
-                                foreach (var day in menuplan?.Days ?? [])
+                        Session sessionForTime = Enum.TryParse(sessionName, out Session parsedSession)
+                            && parsedSession is Session.Breakfast or Session.Lunch
+                                ? parsedSession
+                                : inputSession;
+
+                        foreach (var menuplan in familymenusession?.MenuPlans ?? [])
+                        {
+                            if (IsSuperSnack(menuplan))
+                            {
+                                logger.LogInformation("Skipping super snack plan {MenuPlanName}.", menuplan.MenuPlanName);
+                                continue;
+                            }
+
+                            if (sectionFilter is not null
+                                && !sectionFilter.AllowsPlan(sessionName, menuplan.MenuPlanName))
+                            {
+                                continue;
+                            }
+
+                            logger.LogInformation(
+                                "Using menu plan {MenuPlanName} for {Session} (ServingSession={ServingSession}).",
+                                menuplan.MenuPlanName,
+                                inputSession,
+                                sessionName);
+                            logger.LogInformation("Starting the creation of the {Session} calendar events.", inputSession);
+                            logger.LogInformation("Using {TimeZone} for the time zone.", defaultTimeZone);
+
+                            int? planDisplayTime = sectionFilter?.DisplayTimeFor(
+                                sessionName,
+                                menuplan.MenuPlanName,
+                                displayTimeHhmm) ?? displayTimeHhmm;
+
+                            foreach (var day in menuplan?.Days ?? [])
+                            {
+                                if (!string.IsNullOrEmpty(day.Date))
                                 {
-                                    if (!string.IsNullOrEmpty(day.Date))
+                                    DateTime dateTimeOffset = DateTime.Parse(day.Date, CultureInfo.InvariantCulture);
+                                    DateTime date = MealStart(dateTimeOffset, sessionForTime, planDisplayTime);
+
+                                    foreach (var menumeal in day?.MenuMeals ?? [])
                                     {
-                                        // The day of the week for the meal.
-                                        DateTime dateTimeOffset = DateTime.Parse(day.Date, CultureInfo.InvariantCulture);
-                                        // Default: Lunch 11:30, Breakfast 8:30. Optional route time is HHmm (1100, 1130, 1200).
-                                        DateTime date = MealStart(dateTimeOffset, session, displayTimeHhmm);
-
-                                        foreach (var menumeal in day?.MenuMeals ?? [])
+                                        if (IsSuperSnack(menumeal))
                                         {
-                                            if (IsSuperSnack(menumeal))
-                                            {
-                                                continue;
-                                            }
-
-                                            string? summary = menumeal?.MenuMealName;
-                                            if (string.IsNullOrEmpty(summary))
-                                            {
-                                                continue;
-                                            }
-
-                                            IEnumerable<Recipe[]?> recipeMeals = menumeal?.RecipeCategories?
-                                                .Where(rc => !string.IsNullOrEmpty(rc.CategoryName) && rc.CategoryName.Equals("Meal", StringComparison.OrdinalIgnoreCase))
-                                                .Select(rc => rc.Recipes)
-                                                ?? [];
-                                            if (!recipeMeals.Any())
-                                            {
-                                                continue;
-                                            }
-
-                                            var recipeNames = new List<string>();
-                                            foreach (var recipes in recipeMeals)
-                                            {
-                                                for (int i = 0; i < (recipes?.Length ?? 0); i++)
-                                                {
-                                                    string recipeName = recipes?[i]?.RecipeName ?? "Item Name Empty";
-                                                    recipeNames.Add(recipeName);
-                                                }
-                                            }
-
-                                            var calendarEvent = new CalendarEvent
-                                            {
-                                                Summary = summary,
-                                                Description = string.Join(Environment.NewLine, recipeNames),
-                                                Start = new CalDateTime(date),
-                                                End = new CalDateTime(date.AddMinutes(30)),
-                                            };
-                                            calendar.Events.Add(calendarEvent);
-                                            logger.LogInformation(
-                                                "Added {Summary} on {Start} to the {Session} calendar.",
-                                                calendarEvent.Summary,
-                                                calendarEvent.Start,
-                                                inputSession);
+                                            continue;
                                         }
+
+                                        string? summary = menumeal?.MenuMealName;
+                                        if (string.IsNullOrEmpty(summary))
+                                        {
+                                            continue;
+                                        }
+
+                                        if (sectionFilter is not null
+                                            && !sectionFilter.AllowsMeal(sessionName, menuplan?.MenuPlanName, summary))
+                                        {
+                                            continue;
+                                        }
+
+                                        IReadOnlyList<string> recipeNames = sectionFilter is not null
+                                            ? MenuLunchExtractor.GetRecipeNamesForCalendar(menumeal)
+                                            : MenuLunchExtractor.GetMealRecipeNames(menumeal);
+                                        if (recipeNames.Count == 0)
+                                        {
+                                            continue;
+                                        }
+
+                                        var calendarEvent = new CalendarEvent
+                                        {
+                                            Summary = summary,
+                                            Description = string.Join(Environment.NewLine, recipeNames),
+                                            Start = new CalDateTime(date),
+                                            End = new CalDateTime(date.AddMinutes(30)),
+                                        };
+                                        calendar.Events.Add(calendarEvent);
+                                        logger.LogInformation(
+                                            "Added {Summary} on {Start} to the {Session} calendar.",
+                                            calendarEvent.Summary,
+                                            calendarEvent.Start,
+                                            inputSession);
                                     }
                                 }
                             }

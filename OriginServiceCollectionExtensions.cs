@@ -1,7 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using StVrainToICSFunctionApp.Data;
 using StVrainToICSFunctionApp.Formatters;
-using StVrainToICSFunctionApp.Options;
 using StVrainToICSFunctionApp.Services;
 
 namespace StVrainToICSFunctionApp;
@@ -14,8 +13,10 @@ public static class OriginServiceCollectionExtensions
         {
             controllers.OutputFormatters.Add(new ICSTextOutputFormatter());
         });
+        services.AddMemoryCache();
         services.AddLinqConnectHttpClient();
         services.AddSingleton<ILinqMenuClient, LinqMenuClient>();
+        services.AddSingleton<IFastLinkSlugGenerator, FastLinkSlugGenerator>();
 
         string dbPath = ResolveCacheDatabasePath(configuration, contentRootPath);
         string? dbDir = Path.GetDirectoryName(dbPath);
@@ -26,6 +27,11 @@ public static class OriginServiceCollectionExtensions
 
         services.AddDbContext<MenuCacheDbContext>(options => options.UseSqlite($"Data Source={dbPath}"));
         services.AddScoped<IMenuCacheService, MenuCacheService>();
+        services.AddScoped<IFastLinkStore, FastLinkStore>();
+        services.AddScoped<ISchoolDirectoryService, SchoolDirectoryService>();
+        services.AddScoped<ISubscribeService, SubscribeService>();
+        services.AddScoped<ILandingDayService, LandingDayService>();
+        services.AddScoped<TodayMenuPageService>();
         return services;
     }
 
@@ -34,6 +40,27 @@ public static class OriginServiceCollectionExtensions
         using IServiceScope scope = services.CreateScope();
         MenuCacheDbContext db = scope.ServiceProvider.GetRequiredService<MenuCacheDbContext>();
         db.Database.EnsureCreated();
+        EnsureFastLinksTable(db);
+    }
+
+    /// <summary>
+    /// EnsureCreated does not add new tables to an existing SQLite database.
+    /// </summary>
+    internal static void EnsureFastLinksTable(MenuCacheDbContext db)
+    {
+        db.Database.ExecuteSqlRaw(
+            """
+            CREATE TABLE IF NOT EXISTS "FastLinks" (
+                "Slug" TEXT NOT NULL CONSTRAINT "PK_FastLinks" PRIMARY KEY,
+                "BuildingId" TEXT NOT NULL,
+                "DistrictId" TEXT NOT NULL,
+                "SchoolName" TEXT NOT NULL,
+                "Session" TEXT NOT NULL,
+                "DisplayTimeHhmm" INTEGER NOT NULL,
+                "IncludedPlansJson" TEXT NOT NULL,
+                "CreatedAtUtc" TEXT NOT NULL
+            );
+            """);
     }
 
     internal static string ResolveCacheDatabasePath(IConfiguration configuration, string contentRootPath)

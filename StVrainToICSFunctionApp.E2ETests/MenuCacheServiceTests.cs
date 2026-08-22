@@ -94,6 +94,18 @@ public sealed class MenuCacheServiceTests
 
             return Task.FromResult(Menu);
         }
+
+        public Task<FamilyMenuIdentifierResponse> GetFamilyMenuIdentifiersAsync(
+            string identifier,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(new FamilyMenuIdentifierResponse
+            {
+                DistrictId = DistrictId,
+                Buildings =
+                [
+                    new FamilyMenuBuilding { BuildingId = BuildingId, Name = "Test School" },
+                ],
+            });
     }
 
     private sealed class CacheHarness : IAsyncDisposable

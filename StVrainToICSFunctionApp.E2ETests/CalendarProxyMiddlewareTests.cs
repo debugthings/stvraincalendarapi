@@ -131,6 +131,30 @@ public sealed class CalendarProxyMiddlewareTests
     }
 
     [Fact]
+    public async Task Forwards_fastlink_path_to_upstream()
+    {
+        RecordingHandler handler = new();
+        CalendarProxyMiddleware middleware = new(_ => Task.CompletedTask);
+        CalendarProxyService proxy = new(
+            new StubHttpClientFactory(handler),
+            Microsoft.Extensions.Options.Options.Create(new ProxyOptions
+            {
+                Enabled = true,
+                UpstreamBaseUrl = "https://lunchmenu.debugthings.com",
+            }),
+            NullLogger<CalendarProxyService>.Instance);
+        DefaultHttpContext context = new();
+        context.Request.Method = HttpMethods.Get;
+        context.Request.Path = "/fast-lynx";
+        context.Response.Body = new MemoryStream();
+
+        await middleware.InvokeAsync(context, proxy);
+
+        Assert.Equal(200, context.Response.StatusCode);
+        Assert.Equal("https://lunchmenu.debugthings.com/fast-lynx", handler.LastRequestUri!.AbsoluteUri);
+    }
+
+    [Fact]
     public async Task Non_ics_paths_are_passed_through()
     {
         bool nextCalled = false;

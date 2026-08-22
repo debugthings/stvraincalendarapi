@@ -65,17 +65,24 @@ else
     }
 
     app.MapGet("/healthz", () => Results.Text(LunchMenuHostExtensions.HealthText(app.Configuration), "text/plain"));
-    app.MapGet("/", () => Results.Text(
-        $$"""
-        St. Vrain lunch menu calendar ({{LunchMenuHostExtensions.ModeDescription(app.Configuration)}})
-        GET /Lunchmenu.ics
-        GET /Breakfastmenu.ics
-        GET /Academicmenu.ics
-        GET /rhe/lunchmenu
-        GET /ems/lunchmenu
-        GET /healthz
-        """,
-        "text/plain"));
+    if (proxyEnabled)
+    {
+        app.MapGet("/", () => Results.Text(
+            $$"""
+            St. Vrain lunch menu calendar ({{LunchMenuHostExtensions.ModeDescription(app.Configuration)}})
+            GET /Lunchmenu.ics
+            GET /Breakfastmenu.ics
+            GET /Academicmenu.ics
+            GET /rhe/lunchmenu
+            GET /ems/lunchmenu
+            GET /rhe/breakfastmenu
+            GET /ems/breakfastmenu
+            GET /subscribe
+            GET /healthz
+            """,
+            "text/plain"));
+    }
+
     app.Run();
 }
 

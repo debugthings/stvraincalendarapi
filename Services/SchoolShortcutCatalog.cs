@@ -19,4 +19,9 @@ public sealed class SchoolShortcutCatalog
         shortcut = null!;
         return !string.IsNullOrWhiteSpace(school) && _schools.TryGetValue(school, out shortcut!);
     }
+
+    public IReadOnlyList<KeyValuePair<string, SchoolShortcut>> All() =>
+        _schools
+            .OrderBy(static pair => pair.Key, StringComparer.OrdinalIgnoreCase)
+            .ToList();
 }

@@ -33,6 +33,18 @@ public sealed class CalendarProxyMiddleware
         return value.EndsWith("menu.ics", StringComparison.OrdinalIgnoreCase)
             || value.EndsWith("/lunchmenu", StringComparison.OrdinalIgnoreCase)
             || value.EndsWith("/breakfastmenu", StringComparison.OrdinalIgnoreCase)
-            || value.EndsWith("/academicmenu", StringComparison.OrdinalIgnoreCase);
+            || value.EndsWith("/academicmenu", StringComparison.OrdinalIgnoreCase)
+            || IsFastLinkPath(value);
+    }
+
+    internal static bool IsFastLinkPath(string pathValue)
+    {
+        string trimmed = pathValue.Trim('/');
+        if (trimmed.EndsWith(".ics", StringComparison.OrdinalIgnoreCase))
+        {
+            trimmed = trimmed[..^4];
+        }
+
+        return FastLinkSlugGenerator.IsValidSlug(trimmed);
     }
 }

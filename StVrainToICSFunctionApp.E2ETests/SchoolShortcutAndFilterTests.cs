@@ -27,6 +27,7 @@ public sealed class SchoolShortcutAndFilterTests
 
         Assert.True(catalog.TryGet("RHE", out var rhe));
         Assert.Equal(1130, rhe.DefaultDisplayTime);
+        Assert.Equal(830, rhe.DefaultBreakfastDisplayTime);
         Assert.True(catalog.TryGet("ems", out var ems));
         Assert.Equal(1200, ems.DefaultDisplayTime);
         Assert.False(catalog.TryGet("nope", out _));
